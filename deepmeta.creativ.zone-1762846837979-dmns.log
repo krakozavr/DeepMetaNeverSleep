@@ -1,0 +1,27 @@
+content.js:5 [DeepMeta Never Sleep] Content script loaded
+content.js:222 [DeepMeta Never Sleep] Content script initialized and monitoring
+content.js:172 [DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)
+content.js:24 [DeepMeta Never Sleep] Upload state: ACTIVE (1 uploads)
+content.js:24 [DeepMeta Never Sleep] Upload state: IDLE (0 uploads)
+content.js:172 [DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)
+content.js:24 [DeepMeta Never Sleep] Upload state: ACTIVE (1 uploads)
+content.js:24 [DeepMeta Never Sleep] Upload state: IDLE (0 uploads)
+/dm-thumb/1/TV1cdlhvDlNRZgt-ZlpsUFgFW15fGSNBNyxOB3kH.webp:1  Failed to load resource: the server responded with a status of 404 ()
+dm-proxy-2.fdm-9de.workers.dev/cors/?url=https%3A%2F%2Fesp-prod-virginia.s3-external-1.amazonaws.com%2Fsubmission%2Fassets%2Fbatch_58882846%2F90558d11-2132-41b7-a89e-0d34895726c6.mov%3FuploadId%3DzNMbNv6Pjeo6QjDHhJln2dGslUAC2IzR.kEI.lal8dMMgZWKV30rMGaDhnL4wg.0yDd4H2CWaojbejl2GXkd55P2UaPo_6XPMkCC6gLQTZP0Woxi47bDR7BPfectX2Gr%26partNumber%3D39:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+dm-proxy-2.fdm-9de.workers.dev/cors/?url=https%3A%2F%2Fesp-prod-virginia.s3-external-1.amazonaws.com%2Fsubmission%2Fassets%2Fbatch_58882846%2F90558d11-2132-41b7-a89e-0d34895726c6.mov%3FuploadId%3DzNMbNv6Pjeo6QjDHhJln2dGslUAC2IzR.kEI.lal8dMMgZWKV30rMGaDhnL4wg.0yDd4H2CWaojbejl2GXkd55P2UaPo_6XPMkCC6gLQTZP0Woxi47bDR7BPfectX2Gr%26partNumber%3D40:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+dm-proxy-2.fdm-9de.workers.dev/cors/?url=https%3A%2F%2Fesp-prod-virginia.s3-external-1.amazonaws.com%2Fsubmission%2Fassets%2Fbatch_58882846%2F90558d11-2132-41b7-a89e-0d34895726c6.mov%3FuploadId%3DzNMbNv6Pjeo6QjDHhJln2dGslUAC2IzR.kEI.lal8dMMgZWKV30rMGaDhnL4wg.0yDd4H2CWaojbejl2GXkd55P2UaPo_6XPMkCC6gLQTZP0Woxi47bDR7BPfectX2Gr%26partNumber%3D41:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+dm-proxy-2.fdm-9de.workers.dev/cors/?url=https%3A%2F%2Fesp-prod-virginia.s3-external-1.amazonaws.com%2Fsubmission%2Fassets%2Fbatch_58882846%2F90558d11-2132-41b7-a89e-0d34895726c6.mov%3FuploadId%3DzNMbNv6Pjeo6QjDHhJln2dGslUAC2IzR.kEI.lal8dMMgZWKV30rMGaDhnL4wg.0yDd4H2CWaojbejl2GXkd55P2UaPo_6XPMkCC6gLQTZP0Woxi47bDR7BPfectX2Gr%26partNumber%3D37:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTED
+dm-proxy-2.fdm-9de.workers.dev/cors/?url=https%3A%2F%2Fesp-prod-virginia.s3-external-1.amazonaws.com%2Fsubmission%2Fassets%2Fbatch_58882846%2F90558d11-2132-41b7-a89e-0d34895726c6.mov%3FuploadId%3DzNMbNv6Pjeo6QjDHhJln2dGslUAC2IzR.kEI.lal8dMMgZWKV30rMGaDhnL4wg.0yDd4H2CWaojbejl2GXkd55P2UaPo_6XPMkCC6gLQTZP0Woxi47bDR7BPfectX2Gr%26partNumber%3D38:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTED
+/api/dm-authorize-upload-chunk?accountId=01902717-e71e-7cbd-89cf-432a52a5f033&contributionEspId=460099259&partNr=40&hash=54f70b66b7b9c3c036870c84a6309d650c364e7e17ba2d22e26037f9461608d7&isRaster=false:1  Failed to load resource: net::ERR_NETWORK_CHANGED
+/api/dm-authorize-upload-chunk?accountId=01902717-e71e-7cbd-89cf-432a52a5f033&contributionEspId=460099259&partNr=41&hash=607ba97368c3e54d58921dee74dc143ad3929a5b184be28f5232ecccde29ca42&isRaster=false:1  Failed to load resource: net::ERR_NAME_NOT_RESOLVED
+/api/dm-authorize-upload-chunk?accountId=01902717-e71e-7cbd-89cf-432a52a5f033&contributionEspId=460099259&partNr=39&hash=7550b117e564dd08648bff50b866538620933fae81206c762926c8a3f9efebb5&isRaster=false:1  Failed to load resource: net::ERR_NAME_NOT_RESOLVED
+content.js:172 [DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)
+content.js:24 [DeepMeta Never Sleep] Upload state: ACTIVE (1 uploads)
+content.js:24 [DeepMeta Never Sleep] Upload state: IDLE (0 uploads)
+/dm-thumb/1/TV1cdlhvDlNRZgt-ZlpsUFgFW15fGSNBNyxOB3kH.webp:1  Failed to load resource: the server responded with a status of 404 ()
+content.js:172 [DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)
+content.js:24 [DeepMeta Never Sleep] Upload state: ACTIVE (1 uploads)
+content.js:24 [DeepMeta Never Sleep] Upload state: IDLE (0 uploads)
+content.js:172 [DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)
+content.js:24 [DeepMeta Never Sleep] Upload state: ACTIVE (1 uploads)
+content.js:24 [DeepMeta Never Sleep] Upload state: IDLE (0 uploads)

@@ -19,6 +19,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       activeUploadTabs.delete(tabId);
       updatePowerState();
     }
+  } else if (message.type === 'HEARTBEAT') {
+    // Heartbeat to keep service worker alive during uploads
+    // Just receiving this message keeps the worker active
+    // Don't log every heartbeat to avoid console spam
   }
 });
 

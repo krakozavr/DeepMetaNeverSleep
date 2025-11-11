@@ -1,6 +1,7 @@
 // Track active uploads
 let activeUploads = new Set();
 let lastUploadState = false;
+let heartbeatInterval = null;
 
 console.log('[DeepMeta Never Sleep] Content script loaded');
 
@@ -15,6 +16,28 @@ function notifyUploadStatus(isUploading) {
       // Extension might be reloading, ignore
       console.log('[DeepMeta Never Sleep] Could not send message:', err.message);
     });
+
+    // Manage heartbeat to keep service worker alive during uploads
+    if (isUploading) {
+      // Start heartbeat every 20 seconds to keep service worker alive
+      if (!heartbeatInterval) {
+        console.log('[DeepMeta Never Sleep] Starting service worker heartbeat');
+        heartbeatInterval = setInterval(() => {
+          chrome.runtime.sendMessage({
+            type: 'HEARTBEAT'
+          }).catch(err => {
+            console.log('[DeepMeta Never Sleep] Heartbeat failed:', err.message);
+          });
+        }, 20000); // Every 20 seconds
+      }
+    } else {
+      // Stop heartbeat when uploads complete
+      if (heartbeatInterval) {
+        console.log('[DeepMeta Never Sleep] Stopping service worker heartbeat');
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+    }
   }
 }
 
@@ -154,43 +177,54 @@ window.fetch = function(url, options = {}) {
 };
 
 // Monitor DOM for upload indicators (backup detection method)
-const observer = new MutationObserver((mutations) => {
-  // Look for common upload UI patterns
-  const uploadIndicators = document.querySelectorAll([
-    '[class*="upload"][class*="progress"]',
-    '[class*="uploading"]',
-    '[class*="file-upload"]',
-    'progress[value]',
-    '[role="progressbar"]',
-    '.upload-progress',
-    '.uploading'
-  ].join(','));
+function setupDOMObserver() {
+  const observer = new MutationObserver((mutations) => {
+    // Look for common upload UI patterns
+    const uploadIndicators = document.querySelectorAll([
+      '[class*="upload"][class*="progress"]',
+      '[class*="uploading"]',
+      '[class*="file-upload"]',
+      'progress[value]',
+      '[role="progressbar"]',
+      '.upload-progress',
+      '.uploading'
+    ].join(','));
 
-  // If we find upload indicators, we might have missed the upload start
-  // This is a backup to ensure we catch uploads
-  if (uploadIndicators.length > 0 && activeUploads.size === 0) {
-    console.log('[DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)');
-    const backupId = 'dom-detected';
-    activeUploads.add(backupId);
-    updateUploadState();
+    // If we find upload indicators, we might have missed the upload start
+    // This is a backup to ensure we catch uploads
+    if (uploadIndicators.length > 0 && activeUploads.size === 0) {
+      console.log('[DeepMeta Never Sleep] Upload UI detected in DOM (backup detection)');
+      const backupId = 'dom-detected';
+      activeUploads.add(backupId);
+      updateUploadState();
 
-    // Clear after a timeout if no actual uploads are detected
-    setTimeout(() => {
-      if (activeUploads.has(backupId) && activeUploads.size === 1) {
-        activeUploads.delete(backupId);
-        updateUploadState();
-      }
-    }, 5000);
+      // Clear after a timeout if no actual uploads are detected
+      setTimeout(() => {
+        if (activeUploads.has(backupId) && activeUploads.size === 1) {
+          activeUploads.delete(backupId);
+          updateUploadState();
+        }
+      }, 5000);
+    }
+  });
+
+  // Start observing the document
+  if (document.body) {
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    });
   }
-});
+}
 
-// Start observing the document
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-  attributes: true,
-  attributeFilter: ['class', 'style']
-});
+// Wait for document.body to be available before setting up DOM observer
+if (document.body) {
+  setupDOMObserver();
+} else {
+  document.addEventListener('DOMContentLoaded', setupDOMObserver);
+}
 
 // Periodic check for upload activity (every 5 seconds)
 setInterval(() => {

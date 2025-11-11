@@ -25,6 +25,31 @@ function updateUploadState() {
   notifyUploadStatus(hasActiveUploads);
 }
 
+// Check if URL is a DeepMeta upload-related endpoint
+function isDeepMetaUploadUrl(url, method) {
+  const urlStr = url.toString();
+
+  // DeepMeta API endpoints
+  if (urlStr.includes('/api/dm-initialize-upload') ||
+      urlStr.includes('/api/dm-authorize-upload-chunk') ||
+      urlStr.includes('/api/dm-finalize-upload') ||
+      urlStr.includes('/contribute/esp/uploads')) {
+    return true;
+  }
+
+  // Proxy URLs for actual file uploads to ESP/S3
+  if (urlStr.includes('dm-proxy-') && urlStr.includes('.workers.dev')) {
+    return true;
+  }
+
+  // Generic upload detection for POST/PUT with file data
+  if ((method === 'POST' || method === 'PUT')) {
+    return true;
+  }
+
+  return false;
+}
+
 // Monitor XMLHttpRequest
 const originalXHROpen = XMLHttpRequest.prototype.open;
 const originalXHRSend = XMLHttpRequest.prototype.send;
@@ -37,16 +62,21 @@ XMLHttpRequest.prototype.open = function(method, url, ...args) {
 
 XMLHttpRequest.prototype.send = function(body) {
   const xhr = this;
+  const method = xhr._deepMetaMethod;
+  const url = xhr._deepMetaUrl;
 
-  // Check if this looks like a file upload
-  const isUpload = body instanceof FormData ||
-                   body instanceof File ||
-                   body instanceof Blob ||
-                   (body && body.constructor && body.constructor.name === 'FormData');
+  // Check if this is a DeepMeta upload request
+  const isUploadData = body instanceof FormData ||
+                       body instanceof File ||
+                       body instanceof Blob ||
+                       (body && body.constructor && body.constructor.name === 'FormData') ||
+                       (body && typeof body === 'string' && body.length > 1024) || // Large data
+                       (body instanceof ArrayBuffer && body.byteLength > 1024);
 
-  if (isUpload && xhr._deepMetaMethod === 'POST') {
+  // Monitor both POST and PUT for DeepMeta uploads
+  if (isUploadData && (method === 'POST' || method === 'PUT') && isDeepMetaUploadUrl(url, method)) {
     const uploadId = Date.now() + Math.random();
-    console.log(`[DeepMeta Never Sleep] XHR upload detected: ${xhr._deepMetaUrl}`);
+    console.log(`[DeepMeta Never Sleep] XHR ${method} upload detected: ${url}`);
 
     activeUploads.add(uploadId);
     updateUploadState();
@@ -55,7 +85,7 @@ XMLHttpRequest.prototype.send = function(body) {
     const originalOnReadyStateChange = xhr.onreadystatechange;
     xhr.onreadystatechange = function(...args) {
       if (xhr.readyState === 4) {
-        console.log(`[DeepMeta Never Sleep] XHR upload completed: ${xhr._deepMetaUrl}`);
+        console.log(`[DeepMeta Never Sleep] XHR ${method} upload completed: ${url}`);
         activeUploads.delete(uploadId);
         updateUploadState();
       }
@@ -72,13 +102,13 @@ XMLHttpRequest.prototype.send = function(body) {
 
     // Handle errors
     xhr.addEventListener('error', () => {
-      console.log(`[DeepMeta Never Sleep] XHR upload error: ${xhr._deepMetaUrl}`);
+      console.log(`[DeepMeta Never Sleep] XHR ${method} upload error: ${url}`);
       activeUploads.delete(uploadId);
       updateUploadState();
     });
 
     xhr.addEventListener('abort', () => {
-      console.log(`[DeepMeta Never Sleep] XHR upload aborted: ${xhr._deepMetaUrl}`);
+      console.log(`[DeepMeta Never Sleep] XHR ${method} upload aborted: ${url}`);
       activeUploads.delete(uploadId);
       updateUploadState();
     });
@@ -90,26 +120,30 @@ XMLHttpRequest.prototype.send = function(body) {
 // Monitor Fetch API
 const originalFetch = window.fetch;
 window.fetch = function(url, options = {}) {
-  const isUpload = options.body instanceof FormData ||
-                   options.body instanceof File ||
-                   options.body instanceof Blob;
+  const method = options.method ? options.method.toUpperCase() : 'GET';
+  const isUploadData = options.body instanceof FormData ||
+                       options.body instanceof File ||
+                       options.body instanceof Blob ||
+                       (options.body && typeof options.body === 'string' && options.body.length > 1024) ||
+                       (options.body instanceof ArrayBuffer && options.body.byteLength > 1024);
 
-  if (isUpload && options.method && options.method.toUpperCase() === 'POST') {
+  // Monitor both POST and PUT for DeepMeta uploads
+  if (isUploadData && (method === 'POST' || method === 'PUT') && isDeepMetaUploadUrl(url, method)) {
     const uploadId = Date.now() + Math.random();
-    console.log(`[DeepMeta Never Sleep] Fetch upload detected: ${url}`);
+    console.log(`[DeepMeta Never Sleep] Fetch ${method} upload detected: ${url}`);
 
     activeUploads.add(uploadId);
     updateUploadState();
 
     return originalFetch.apply(this, arguments)
       .then(response => {
-        console.log(`[DeepMeta Never Sleep] Fetch upload completed: ${url}`);
+        console.log(`[DeepMeta Never Sleep] Fetch ${method} upload completed: ${url}`);
         activeUploads.delete(uploadId);
         updateUploadState();
         return response;
       })
       .catch(error => {
-        console.log(`[DeepMeta Never Sleep] Fetch upload error: ${url}`);
+        console.log(`[DeepMeta Never Sleep] Fetch ${method} upload error: ${url}`);
         activeUploads.delete(uploadId);
         updateUploadState();
         throw error;

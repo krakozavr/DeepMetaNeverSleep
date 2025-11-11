@@ -1,0 +1,114 @@
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+Fetch finished loading: GET "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+XHR finished loading: PUT "<URL>".
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+XHR failed loading: PUT "<URL>".
+Fetch finished loading: POST "<URL>".
+Fetch finished loading: POST "<URL>".
+Fetch finished loading: POST "<URL>".
+Fetch finished loading: POST "<URL>".
+Fetch finished loading: POST "<URL>".
+VM757 content.js:13 Uncaught TypeError: Cannot read properties of undefined (reading 'sendMessage')
+    at VM757 content.js:13:22
+(anonymous) @ VM757 content.js:13
+setInterval
+(anonymous) @ VM757 content.js:12
+content.js:10 Uncaught Error: Extension context invalidated.
+    at content.js:10:18
+(anonymous) @ content.js:10
+setInterval
+(anonymous) @ content.js:9
+content.js:13 Uncaught 
+(anonymous) @ content.js:13
+setInterval
+(anonymous) @ content.js:12

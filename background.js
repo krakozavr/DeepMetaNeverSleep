@@ -5,6 +5,10 @@ const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }
 const activeUploadTabs = new Set(); // Set of tab IDs with active uploads
 
+// Grace period timer to prevent premature keep-awake release
+let releaseKeepAwakeTimer = null;
+const RELEASE_GRACE_PERIOD = 10000; // 10 seconds grace period
+
 // Check if URL is a DeepMeta upload endpoint
 function isDeepMetaUploadUrl(url) {
   return url.includes('/api/dm-initialize-upload') ||
@@ -143,13 +147,35 @@ browserAPI.tabs.onRemoved.addListener((tabId) => {
 // Update power management state based on active uploads
 function updatePowerState() {
   if (activeUploadTabs.size > 0) {
+    // Cancel any pending release timer
+    if (releaseKeepAwakeTimer) {
+      clearTimeout(releaseKeepAwakeTimer);
+      releaseKeepAwakeTimer = null;
+      console.log('[DeepMeta Never Sleep] Cancelled pending keep-awake release');
+    }
+
     // Keep system awake (screen can turn off)
     browserAPI.power.requestKeepAwake('system');
     console.log(`[DeepMeta Never Sleep] Keep awake enabled (${activeUploadTabs.size} active uploads)`);
   } else {
-    // Release keep awake
-    browserAPI.power.releaseKeepAwake();
-    console.log('[DeepMeta Never Sleep] Keep awake released (no active uploads)');
+    // No active uploads - start grace period before releasing keep-awake
+    // This prevents releasing and re-acquiring keep-awake during gaps between upload batches
+    if (releaseKeepAwakeTimer) {
+      console.log('[DeepMeta Never Sleep] Grace period already active, waiting...');
+      return;
+    }
+
+    console.log(`[DeepMeta Never Sleep] No active uploads, starting ${RELEASE_GRACE_PERIOD/1000}s grace period...`);
+    releaseKeepAwakeTimer = setTimeout(() => {
+      // After grace period, check again if still no uploads
+      if (activeUploadTabs.size === 0) {
+        browserAPI.power.releaseKeepAwake();
+        console.log('[DeepMeta Never Sleep] Keep awake released (grace period expired, no new uploads)');
+      } else {
+        console.log('[DeepMeta Never Sleep] New uploads started during grace period, staying awake');
+      }
+      releaseKeepAwakeTimer = null;
+    }, RELEASE_GRACE_PERIOD);
   }
 }
 

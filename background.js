@@ -1,3 +1,6 @@
+// Cross-browser compatibility: Firefox uses 'browser', Chrome uses 'chrome'
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+
 // Track active upload requests by request ID
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }
 const activeUploadTabs = new Set(); // Set of tab IDs with active uploads
@@ -12,7 +15,7 @@ function isDeepMetaUploadUrl(url) {
 }
 
 // Listen for upload requests starting (webRequest API - works at browser level)
-chrome.webRequest.onBeforeRequest.addListener(
+browserAPI.webRequest.onBeforeRequest.addListener(
   (details) => {
     // Only track POST and PUT requests to DeepMeta endpoints
     if ((details.method === 'POST' || details.method === 'PUT') &&
@@ -41,7 +44,7 @@ chrome.webRequest.onBeforeRequest.addListener(
 );
 
 // Listen for upload requests completing
-chrome.webRequest.onCompleted.addListener(
+browserAPI.webRequest.onCompleted.addListener(
   (details) => {
     if (activeUploadRequests.has(details.requestId)) {
       const request = activeUploadRequests.get(details.requestId);
@@ -69,7 +72,7 @@ chrome.webRequest.onCompleted.addListener(
 );
 
 // Listen for upload requests failing/aborting
-chrome.webRequest.onErrorOccurred.addListener(
+browserAPI.webRequest.onErrorOccurred.addListener(
   (details) => {
     if (activeUploadRequests.has(details.requestId)) {
       const request = activeUploadRequests.get(details.requestId);
@@ -121,7 +124,7 @@ setInterval(() => {
 }, 30000); // Every 30 seconds
 
 // Listen for messages from content scripts (for heartbeat to keep worker alive)
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HEARTBEAT') {
     // Heartbeat to keep service worker alive
     // Just receiving this message keeps the worker active
@@ -129,7 +132,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Listen for tab closure
-chrome.tabs.onRemoved.addListener((tabId) => {
+browserAPI.tabs.onRemoved.addListener((tabId) => {
   if (activeUploadTabs.has(tabId)) {
     console.log(`[DeepMeta Never Sleep] Tab ${tabId} closed, removing from active uploads`);
     activeUploadTabs.delete(tabId);
@@ -141,22 +144,22 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 function updatePowerState() {
   if (activeUploadTabs.size > 0) {
     // Keep system awake (screen can turn off)
-    chrome.power.requestKeepAwake('system');
+    browserAPI.power.requestKeepAwake('system');
     console.log(`[DeepMeta Never Sleep] Keep awake enabled (${activeUploadTabs.size} active uploads)`);
   } else {
     // Release keep awake
-    chrome.power.releaseKeepAwake();
+    browserAPI.power.releaseKeepAwake();
     console.log('[DeepMeta Never Sleep] Keep awake released (no active uploads)');
   }
 }
 
 // Check for existing DeepMeta tabs on extension load
-chrome.runtime.onInstalled.addListener(() => {
+browserAPI.runtime.onInstalled.addListener(() => {
   console.log('[DeepMeta Never Sleep] Extension installed/updated');
   checkExistingTabs();
 });
 
-chrome.runtime.onStartup.addListener(() => {
+browserAPI.runtime.onStartup.addListener(() => {
   console.log('[DeepMeta Never Sleep] Browser started');
   checkExistingTabs();
 });
@@ -164,14 +167,14 @@ chrome.runtime.onStartup.addListener(() => {
 // Check existing tabs for DeepMeta
 async function checkExistingTabs() {
   try {
-    const tabs = await chrome.tabs.query({ url: 'https://deepmeta.creativ.zone/*' });
+    const tabs = await browserAPI.tabs.query({ url: 'https://deepmeta.creativ.zone/*' });
     console.log(`[DeepMeta Never Sleep] Found ${tabs.length} DeepMeta tab(s)`);
 
     // Inject content script into existing tabs if needed
     for (const tab of tabs) {
       if (tab.id) {
         try {
-          await chrome.scripting.executeScript({
+          await browserAPI.scripting.executeScript({
             target: { tabId: tab.id },
             files: ['content.js']
           });

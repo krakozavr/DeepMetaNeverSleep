@@ -8,7 +8,7 @@ A browser extension that prevents your computer from sleeping during active file
 - Monitors for active file upload sessions
 - Keeps your computer awake during uploads (screen can turn off)
 - Supports multiple DeepMeta tabs simultaneously
-- Works across Firefox, Chrome, and Edge
+- Works across Chrome and Edge
 
 ## How It Works
 
@@ -28,22 +28,6 @@ The extension:
 3. Enable "Developer mode" (toggle in top-right corner)
 4. Click "Load unpacked"
 5. Select the `DeepMetaNeverSleep` folder
-
-### Firefox
-
-1. Clone or download this repository
-2. Open Firefox and navigate to `about:debugging#/runtime/this-firefox`
-3. Click "Load Temporary Add-on"
-4. Navigate to the `DeepMetaNeverSleep` folder and select `manifest.json`
-
-**Note:** For permanent installation in Firefox, the extension needs to be signed. For development/personal use, the temporary installation method works perfectly.
-
-### Firefox Permanent Installation (Optional)
-
-To install permanently in Firefox:
-1. Package the extension: `cd DeepMetaNeverSleep && zip -r ../deepmeta-never-sleep.zip *`
-2. Submit to [Firefox Add-ons](https://addons.mozilla.org/developers/) for signing
-3. Or use [web-ext](https://extensionworkshop.com/documentation/develop/getting-started-with-web-ext/) for local development
 
 ## Usage
 
@@ -145,12 +129,6 @@ The extension requires these permissions:
 3. Some operating systems may override browser power management (check OS settings)
 4. Try the extension in a different browser
 
-### Firefox "Temporary Add-on"
-
-Firefox temporary add-ons are removed when Firefox closes. For permanent installation:
-- Use web-ext for development: `web-ext run`
-- Or submit to AMO for signing
-
 ## Privacy
 
 This extension:
@@ -170,7 +148,7 @@ Contributions welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test in both Firefox and Chrome
+4. Test in Chrome/Edge
 5. Submit a pull request
 
 ## Support

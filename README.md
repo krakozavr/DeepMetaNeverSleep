@@ -4,11 +4,11 @@ A browser extension that prevents your computer from sleeping during active file
 
 ## Features
 
-- Automatically detects when DeepMeta tabs are open
+- Automatically detects when DeepMeta4 tabs are open
 - Monitors for active file upload sessions
 - Keeps your computer awake during uploads (screen can turn off)
-- Supports multiple DeepMeta tabs simultaneously
-- Works across Chrome and Edge
+- Supports multiple DeepMeta4 tabs simultaneously
+- Works across Google Chrome, MS Edge, and other Chromium-based browsers
 
 ## How It Works
 

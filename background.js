@@ -195,21 +195,9 @@ async function checkExistingTabs() {
   try {
     const tabs = await browserAPI.tabs.query({ url: 'https://deepmeta.creativ.zone/*' });
     console.log(`[DeepMeta Never Sleep] Found ${tabs.length} DeepMeta tab(s)`);
-
-    // Inject content script into existing tabs if needed
-    for (const tab of tabs) {
-      if (tab.id) {
-        try {
-          await browserAPI.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content.js']
-          });
-        } catch (error) {
-          // Tab might not be ready or accessible, ignore
-          console.log(`[DeepMeta Never Sleep] Could not inject into tab ${tab.id}:`, error.message);
-        }
-      }
-    }
+    // Content script injection is handled automatically by the manifest content_scripts
+    // declaration — no need to inject manually here, which would cause a duplicate
+    // 'browserAPI' declaration error on pages that already have the script loaded.
   } catch (error) {
     console.error('[DeepMeta Never Sleep] Error checking existing tabs:', error);
   }

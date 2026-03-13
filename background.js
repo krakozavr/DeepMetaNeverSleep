@@ -1,29 +1,5 @@
 const browserAPI = chrome;
 
-// Update checking
-// TODO: replace with your actual Vercel project URL after deploying
-const UPDATE_CHECK_URL = 'https://YOUR_PROJECT.vercel.app/version.json';
-const UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
-
-async function checkForUpdate() {
-  try {
-    const response = await fetch(UPDATE_CHECK_URL);
-    if (!response.ok) return;
-    const { version: latestVersion } = await response.json();
-    const manifest = browserAPI.runtime.getManifest();
-    if (latestVersion && latestVersion !== manifest.version) {
-      browserAPI.notifications.create('update-available', {
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'DeepMeta Never Sleep — Update Available',
-        message: `Version ${latestVersion} is available (you have ${manifest.version}). Reinstall the extension to update.`
-      });
-    }
-  } catch (err) {
-    // Network unavailable or endpoint not yet configured — silently ignore
-  }
-}
-
 // Track active upload requests by request ID
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }
 const activeUploadTabs = new Set(); // Set of tab IDs with active uploads
@@ -206,18 +182,11 @@ function updatePowerState() {
 browserAPI.runtime.onInstalled.addListener(() => {
   console.log('[DeepMeta Never Sleep] Extension installed/updated');
   checkExistingTabs();
-  checkForUpdate();
-  browserAPI.alarms.create('update-check', { periodInMinutes: UPDATE_CHECK_INTERVAL / 60000 });
 });
 
 browserAPI.runtime.onStartup.addListener(() => {
   console.log('[DeepMeta Never Sleep] Browser started');
   checkExistingTabs();
-  checkForUpdate();
-});
-
-browserAPI.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'update-check') checkForUpdate();
 });
 
 // Check existing tabs for DeepMeta

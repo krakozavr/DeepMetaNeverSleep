@@ -6,9 +6,7 @@
   "permissions": [
     "tabs",
     "power",
-    "webRequest",
-    "notifications",
-    "alarms"
+    "webRequest"
   ],
   "host_permissions": [
     "https://deepmeta.creativ.zone/*",

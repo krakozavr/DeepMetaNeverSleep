@@ -2,9 +2,6 @@
 // This script sends periodic heartbeats to keep the service worker alive
 // Upload detection is now handled by webRequest API in background.js
 
-// Cross-browser compatibility: Firefox uses 'browser', Chrome uses 'chrome'
-const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
-
 console.log('[DeepMeta Never Sleep] Content script loaded');
 
 // Send heartbeat every 20 seconds to keep service worker alive
@@ -12,13 +9,13 @@ console.log('[DeepMeta Never Sleep] Content script loaded');
 const heartbeatInterval = setInterval(() => {
   try {
     // Check if extension context is still valid
-    if (!browserAPI.runtime?.id) {
+    if (!chrome.runtime?.id) {
       console.log('[DeepMeta Never Sleep] Extension context invalidated, stopping heartbeat');
       clearInterval(heartbeatInterval);
       return;
     }
 
-    browserAPI.runtime.sendMessage({
+    chrome.runtime.sendMessage({
       type: 'HEARTBEAT'
     }).catch(err => {
       // Extension might be reloading, ignore promise rejection

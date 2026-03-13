@@ -1,5 +1,4 @@
-// Cross-browser compatibility: Firefox uses 'browser', Chrome uses 'chrome'
-const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+const browserAPI = chrome;
 
 // Track active upload requests by request ID
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }

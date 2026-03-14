@@ -22,9 +22,14 @@ function setIcon(state) {
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }
 const activeUploadTabs = new Set(); // Set of tab IDs with active uploads
 
-// Grace period timer to prevent premature keep-awake release
-let releaseKeepAwakeTimer = null;
-const RELEASE_GRACE_PERIOD = 10000; // 10 seconds grace period
+// Alarm names
+const GRACE_PERIOD_ALARM = 'releaseKeepAwake';
+const STALE_CLEANUP_ALARM = 'staleCleanup';
+
+// Grace period (in minutes) before releasing keep-awake after all uploads finish.
+// Must be >= 1 due to Chrome alarm API minimum delay.
+// Prevents rapid on/off during gaps between upload batches.
+const RELEASE_GRACE_PERIOD_MINUTES = 1;
 
 // Check if URL is a DeepMeta upload endpoint
 function isDeepMetaUploadUrl(url) {
@@ -121,8 +126,27 @@ browserAPI.webRequest.onErrorOccurred.addListener(
   }
 );
 
+// Handle alarms - persistent across service worker restarts
+browserAPI.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === GRACE_PERIOD_ALARM) {
+    // After grace period, release keep-awake if still no active uploads.
+    // This fires even if the service worker was terminated and restarted,
+    // which is the key fix for the deactivation bug.
+    if (activeUploadTabs.size === 0) {
+      browserAPI.power.releaseKeepAwake();
+      setIcon('waiting');
+      console.log('[DeepMeta Never Sleep] Keep awake released (grace period alarm fired, no active uploads)');
+    } else {
+      console.log('[DeepMeta Never Sleep] New uploads started during grace period, staying awake');
+    }
+  } else if (alarm.name === STALE_CLEANUP_ALARM) {
+    runStaleCleanup();
+  }
+});
+
 // Periodic cleanup of stale requests (safety mechanism)
-setInterval(() => {
+// Uses alarms instead of setInterval so it survives service worker restarts.
+function runStaleCleanup() {
   const now = Date.now();
   const staleThreshold = 5 * 60 * 1000; // 5 minutes
 
@@ -143,7 +167,7 @@ setInterval(() => {
     currentActiveTabs.forEach(tabId => activeUploadTabs.add(tabId));
     updatePowerState();
   }
-}, 30000); // Every 30 seconds
+}
 
 // Listen for messages from content scripts (for heartbeat to keep worker alive)
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -165,37 +189,27 @@ browserAPI.tabs.onRemoved.addListener((tabId) => {
 // Update power management state based on active uploads
 function updatePowerState() {
   if (activeUploadTabs.size > 0) {
-    // Cancel any pending release timer
-    if (releaseKeepAwakeTimer) {
-      clearTimeout(releaseKeepAwakeTimer);
-      releaseKeepAwakeTimer = null;
-      console.log('[DeepMeta Never Sleep] Cancelled pending keep-awake release');
-    }
+    // Cancel any pending grace period alarm
+    browserAPI.alarms.clear(GRACE_PERIOD_ALARM);
 
     // Keep system awake (screen can turn off)
     browserAPI.power.requestKeepAwake('system');
     setIcon('active');
     console.log(`[DeepMeta Never Sleep] Keep awake enabled (${activeUploadTabs.size} active uploads)`);
   } else {
-    // No active uploads - start grace period before releasing keep-awake
-    // This prevents releasing and re-acquiring keep-awake during gaps between upload batches
-    if (releaseKeepAwakeTimer) {
-      console.log('[DeepMeta Never Sleep] Grace period already active, waiting...');
-      return;
-    }
-
-    console.log(`[DeepMeta Never Sleep] No active uploads, starting ${RELEASE_GRACE_PERIOD/1000}s grace period...`);
-    releaseKeepAwakeTimer = setTimeout(() => {
-      // After grace period, check again if still no uploads
-      if (activeUploadTabs.size === 0) {
-        browserAPI.power.releaseKeepAwake();
-        setIcon('waiting');
-        console.log('[DeepMeta Never Sleep] Keep awake released (grace period expired, no new uploads)');
-      } else {
-        console.log('[DeepMeta Never Sleep] New uploads started during grace period, staying awake');
+    // No active uploads - schedule grace period alarm before releasing keep-awake.
+    // Using chrome.alarms instead of setTimeout so the release fires correctly
+    // even if the service worker is terminated while waiting (e.g. tab in background).
+    browserAPI.alarms.get(GRACE_PERIOD_ALARM, (existing) => {
+      if (existing) {
+        console.log('[DeepMeta Never Sleep] Grace period alarm already scheduled, waiting...');
+        return;
       }
-      releaseKeepAwakeTimer = null;
-    }, RELEASE_GRACE_PERIOD);
+      console.log(`[DeepMeta Never Sleep] No active uploads, scheduling ${RELEASE_GRACE_PERIOD_MINUTES}min grace period alarm...`);
+      browserAPI.alarms.create(GRACE_PERIOD_ALARM, {
+        delayInMinutes: RELEASE_GRACE_PERIOD_MINUTES
+      });
+    });
   }
 }
 
@@ -203,12 +217,20 @@ function updatePowerState() {
 browserAPI.runtime.onInstalled.addListener(() => {
   console.log('[DeepMeta Never Sleep] Extension installed/updated');
   setIcon('waiting');
+  // Start periodic stale-request cleanup alarm
+  browserAPI.alarms.create(STALE_CLEANUP_ALARM, { periodInMinutes: 1 });
   checkExistingTabs();
 });
 
 browserAPI.runtime.onStartup.addListener(() => {
   console.log('[DeepMeta Never Sleep] Browser started');
   setIcon('waiting');
+  // Ensure periodic cleanup alarm is running
+  browserAPI.alarms.get(STALE_CLEANUP_ALARM, (existing) => {
+    if (!existing) {
+      browserAPI.alarms.create(STALE_CLEANUP_ALARM, { periodInMinutes: 1 });
+    }
+  });
   checkExistingTabs();
 });
 

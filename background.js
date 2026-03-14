@@ -1,5 +1,16 @@
 const browserAPI = chrome;
 
+// Set extension icon based on state: 'active', 'waiting', 'error'
+function setIcon(state) {
+  browserAPI.action.setIcon({
+    path: {
+      16: `icons-new/icon-16-${state}.png`,
+      48: `icons-new/icon-48-${state}.png`,
+      128: `icons-new/icon128-${state}.png`
+    }
+  });
+}
+
 // Track active upload requests by request ID
 const activeUploadRequests = new Map(); // requestId -> { tabId, url, timestamp }
 const activeUploadTabs = new Set(); // Set of tab IDs with active uploads
@@ -89,6 +100,7 @@ browserAPI.webRequest.onErrorOccurred.addListener(
 
       if (!tabStillActive && activeUploadTabs.has(request.tabId)) {
         activeUploadTabs.delete(request.tabId);
+        setIcon('error');
         console.log(`[DeepMeta Never Sleep] All uploads stopped in tab ${request.tabId}`);
         updatePowerState();
       }
@@ -155,6 +167,7 @@ function updatePowerState() {
 
     // Keep system awake (screen can turn off)
     browserAPI.power.requestKeepAwake('system');
+    setIcon('active');
     console.log(`[DeepMeta Never Sleep] Keep awake enabled (${activeUploadTabs.size} active uploads)`);
   } else {
     // No active uploads - start grace period before releasing keep-awake
@@ -169,6 +182,7 @@ function updatePowerState() {
       // After grace period, check again if still no uploads
       if (activeUploadTabs.size === 0) {
         browserAPI.power.releaseKeepAwake();
+        setIcon('waiting');
         console.log('[DeepMeta Never Sleep] Keep awake released (grace period expired, no new uploads)');
       } else {
         console.log('[DeepMeta Never Sleep] New uploads started during grace period, staying awake');
@@ -181,11 +195,13 @@ function updatePowerState() {
 // Check for existing DeepMeta tabs on extension load
 browserAPI.runtime.onInstalled.addListener(() => {
   console.log('[DeepMeta Never Sleep] Extension installed/updated');
+  setIcon('waiting');
   checkExistingTabs();
 });
 
 browserAPI.runtime.onStartup.addListener(() => {
   console.log('[DeepMeta Never Sleep] Browser started');
+  setIcon('waiting');
   checkExistingTabs();
 });
 

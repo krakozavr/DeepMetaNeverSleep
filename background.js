@@ -10,9 +10,9 @@ const STATE_TITLES = {
 function setIcon(state) {
   browserAPI.action.setIcon({
     path: {
-      16: `icons-new/icon-16-${state}.png`,
-      48: `icons-new/icon-48-${state}.png`,
-      128: `icons-new/icon128-${state}.png`
+      16: `icons/icon-16-${state}.png`,
+      48: `icons/icon-48-${state}.png`,
+      128: `icons/icon128-${state}.png`
     }
   });
   browserAPI.action.setTitle({ title: STATE_TITLES[state] });

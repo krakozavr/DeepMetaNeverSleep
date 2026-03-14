@@ -1,6 +1,12 @@
 const browserAPI = chrome;
 
-// Set extension icon based on state: 'active', 'waiting', 'error'
+const STATE_TITLES = {
+  active:  'DeepMetaNeverSleep - Active',
+  waiting: 'DeepMetaNeverSleep - Idling',
+  error:   'DeepMetaNeverSleep - Error'
+};
+
+// Set extension icon and tooltip based on state: 'active', 'waiting', 'error'
 function setIcon(state) {
   browserAPI.action.setIcon({
     path: {
@@ -9,6 +15,7 @@ function setIcon(state) {
       128: `icons-new/icon128-${state}.png`
     }
   });
+  browserAPI.action.setTitle({ title: STATE_TITLES[state] });
 }
 
 // Track active upload requests by request ID

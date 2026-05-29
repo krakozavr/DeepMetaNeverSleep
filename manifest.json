@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DeepMeta Never Sleep",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Prevents your computer from sleeping during active DeepMeta file uploads",
   "permissions": [
     "tabs",
@@ -21,6 +21,12 @@
       "matches": ["https://deepmeta.creativ.zone/*"],
       "js": ["content.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://deepmeta.creativ.zone/*"],
+      "js": ["scroll-restore.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "icons": {

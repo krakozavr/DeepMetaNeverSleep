@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeepMeta Never Sleep</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup">
+    <header>
+      <img src="icons/icon-48-waiting.png" alt="" width="32" height="32">
+      <div>
+        <h1>DeepMeta Never Sleep</h1>
+        <p>Settings</p>
+      </div>
+    </header>
+
+    <label class="setting">
+      <span>
+        <strong>Prevent sleep during uploads</strong>
+        <small>Keep the computer awake while DeepMeta uploads are active.</small>
+      </span>
+      <input type="checkbox" id="preventSleepActiveUploads">
+    </label>
+
+    <label class="setting">
+      <span>
+        <strong>Restore search results</strong>
+        <small>Return to the same search-filtered batch list.</small>
+      </span>
+      <input type="checkbox" id="restoreSearchResults">
+    </label>
+
+    <label class="setting">
+      <span>
+        <strong>Restore batch position</strong>
+        <small>Scroll back to the opened batch and keep it highlighted.</small>
+      </span>
+      <input type="checkbox" id="restoreBatchPosition">
+    </label>
+
+    <p class="status" id="status" role="status"></p>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

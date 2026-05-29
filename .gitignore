@@ -1,0 +1,13 @@
+# Local backup and export artifacts
+*.bak
+*.log
+PACK/
+
+# Packaged extension archives
+*.zip
+*.crx
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini

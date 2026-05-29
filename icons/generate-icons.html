@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Extension Icons</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+    .icon-container { margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <h1>DeepMeta Never Sleep - Icon Generator</h1>
+  <p>Click the buttons below to download the extension icons:</p>
+
+  <div class="icon-container">
+    <h3>16x16 Icon</h3>
+    <canvas id="canvas16" width="16" height="16"></canvas>
+    <button onclick="downloadIcon('canvas16', 'icon16.png')">Download icon16.png</button>
+  </div>
+
+  <div class="icon-container">
+    <h3>48x48 Icon</h3>
+    <canvas id="canvas48" width="48" height="48"></canvas>
+    <button onclick="downloadIcon('canvas48', 'icon48.png')">Download icon48.png</button>
+  </div>
+
+  <div class="icon-container">
+    <h3>128x128 Icon</h3>
+    <canvas id="canvas128" width="128" height="128"></canvas>
+    <button onclick="downloadIcon('canvas128', 'icon128.png')">Download icon128.png</button>
+  </div>
+
+  <script>
+    function drawIcon(canvas) {
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+      const center = size / 2;
+
+      // Background circle
+      ctx.fillStyle = '#4CAF50';
+      ctx.beginPath();
+      ctx.arc(center, center, size * 0.47, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner circle
+      ctx.fillStyle = '#2E7D32';
+      ctx.beginPath();
+      ctx.arc(center, center, size * 0.39, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Eye (stay awake symbol)
+      ctx.fillStyle = '#FFF';
+      ctx.beginPath();
+      ctx.ellipse(center, center, size * 0.27, size * 0.20, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil outer
+      ctx.fillStyle = '#2E7D32';
+      ctx.beginPath();
+      ctx.arc(center, center, size * 0.12, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil inner
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(center, center, size * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Highlight
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.beginPath();
+      ctx.arc(center + size * 0.03, center - size * 0.03, size * 0.023, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function downloadIcon(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const url = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      link.click();
+    }
+
+    // Draw all icons on page load
+    window.onload = function() {
+      drawIcon(document.getElementById('canvas16'));
+      drawIcon(document.getElementById('canvas48'));
+      drawIcon(document.getElementById('canvas128'));
+    };
+  </script>
+</body>
+</html>

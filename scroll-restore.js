@@ -1,29 +1,30 @@
 // =============================================================================
-// FEATURE: Bring the batch you opened back into view (v1.6.x)
+// FEATURE: Bring the batch you opened back into view + keep it highlighted (v1.7)
 //
 // HOW THE APP WORKS (from network logs):
-//   • The batch list is server-paginated: GET /api/dm-batches?...&page=1..N
-//     (25 rows/page). On return to /batches the app re-fetches every page it had
-//     loaded — the full list takes ~2s to rebuild.
-//   • The active-row highlight (class bg-sky-100) is driven by GET /api/preference
-//     and lands ~1-2s after return, so watching it right away is racy.
+//   • The batch list is server-paginated (GET /api/dm-batches?...&page=1..N,
+//     25/page) and re-fetched on return (~2s to rebuild).
+//   • The active-row highlight (class bg-sky-100 / dark:bg-sky-900) is driven by
+//     GET /api/preference. It lands ~1-2s after return AND can latch onto the
+//     stale previous folder and stay wrong (confirmed in a clean browser at
+//     speed) — so we can't just wait it out.
 //   • Each row's thumbnail is served from
 //         thumbs-deepmeta.creativ.zone/<batchId-without-dashes>/...
-//     so a row can be matched to a batchId deterministically via its <img>.
+//     so a row maps to a batchId deterministically via its <img>.
 //
-// STRATEGY: we know the batchId we navigated into (from the URL). On return:
-//   1. Primary — find that batch's row by its thumbnail and scrollIntoView it.
-//      Deterministic and independent of the highlight race.
-//   2. Fallback (batch has no UUID thumbnail, e.g. S3-hosted) — wait until the
-//      app's highlight has *stabilized*, then reveal that row. We never jump to
-//      an instantaneous highlight, which could still be the stale previous one.
-//   3. If neither a row nor any highlight is present after a grace period, page
-//      down to trigger lazy pagination, then retry.
+// WHAT WE DO on return to /batches:
+//   1. Find the opened batch's row by its thumbnail and scroll it into view —
+//      but only scroll when it's actually off-screen, so we don't disrupt the
+//      app's lazy thumbnail loading (repeated programmatic scrolls were making
+//      surrounding elements fail to load).
+//   2. Assert the active highlight on that row ourselves for a short window
+//      (~2.5s), covering the app's laggy/stuck /api/preference render. After
+//      that the list is static, so our class simply stays.
+//   3. Fallbacks: if the batch has no UUID thumbnail (S3-hosted), wait for the
+//      app's highlight to stabilize instead; if nothing renders, page down to
+//      trigger pagination.
 //
-// We touch nothing else: no History API, no focus, no setting the highlight —
-// the app paints the active row on its own.
-//
-// MUST run in the page MAIN world (manifest.json "world": "MAIN").
+// We never touch the History API or focus. MUST run in the page MAIN world.
 // =============================================================================
 
 (function () {
@@ -32,12 +33,14 @@
   const LOG = '[DeepMeta Never Sleep][ScrollRestore]';
   const BATCHES_PATH = '/contribute/esp/batches';
 
-  const MAX_MS = 8000;
-  const SETTLE_FRAMES = 5;        // frames the row must stay centered before we stop
+  const MAX_MS = 8000;             // overall budget to find the row
+  const HOLD_MS = 2500;            // keep our highlight asserted this long
+  const SETTLE_FRAMES = 5;         // fallback path: frames the row must stay visible
   const HIGHLIGHT_STABLE_MS = 500; // fallback: highlight must hold this long
   const POLL_MS = 150;
-  const GRACE_MS = 2500;          // wait for auto-refetch before nudging
+  const GRACE_MS = 2500;           // wait for auto-refetch before nudging
   const NUDGE_INTERVAL_MS = 250;
+  const HL_CLASSES = ['bg-sky-100', 'dark:bg-sky-900']; // app's active-row marker
 
   let generation = 0;
   let lastPath = location.pathname;
@@ -80,22 +83,32 @@
     return (row.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50) || '(row)';
   }
 
-  function isCentered(row, container) {
+  function isFullyVisible(row, container) {
     const c = container.getBoundingClientRect();
     const r = row.getBoundingClientRect();
-    const rowCenter = r.top + r.height / 2;
-    const viewCenter = c.top + c.height / 2;
-    return r.top >= c.top && r.bottom <= c.bottom && Math.abs(rowCenter - viewCenter) < c.height * 0.45;
+    return r.top >= c.top - 2 && r.bottom <= c.bottom + 2;
+  }
+
+  // Mirror the app's active-row marker onto our row and clear it from any stale
+  // row, so the opened folder looks active immediately. React may overwrite this
+  // when /api/preference resolves; we re-apply each frame during the hold window.
+  function paintHighlight(target) {
+    const scope = document.querySelector('main') || document;
+    scope.querySelectorAll('tbody tr.bg-sky-100').forEach((tr) => {
+      if (tr !== target) HL_CLASSES.forEach((c) => tr.classList.remove(c));
+    });
+    HL_CLASSES.forEach((c) => target.classList.add(c));
   }
 
   function revealOpenedBatch() {
     const batchId = lastOpenedBatchId;
     const myGen = ++generation;
     const start = performance.now();
-    let settle = 0;
     let foundVia = null;
+    let foundAt = 0;
+    let settle = 0;
 
-    // Highlight-stability tracking (fallback path).
+    // Highlight-stability tracking (S3 fallback path).
     let hlLabel = null;
     let hlStableSince = 0;
 
@@ -140,18 +153,31 @@
         const container = getScrollContainer();
         if (!foundVia) {
           foundVia = via;
+          foundAt = now;
           console.log(`${LOG} Found target row via ${via} @${t}ms`);
         }
-        if (container) {
-          if (isCentered(row, container)) {
-            if (++settle >= SETTLE_FRAMES) {
-              cleanup();
-              console.log(`${LOG} Revealed target row (${t}ms, via ${foundVia})`);
-              return;
-            }
-          } else {
-            row.scrollIntoView({ block: 'center', inline: 'nearest' });
-            settle = 0;
+
+        // Scroll ONLY when the row is off-screen — minimize programmatic scrolls
+        // so the app's lazy thumbnail loading isn't disrupted.
+        if (container && !isFullyVisible(row, container)) {
+          row.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
+
+        if (foundVia === 'thumbnail') {
+          // Assert the active highlight ourselves through the laggy preference
+          // render, then let go (the list is static afterwards).
+          paintHighlight(row);
+          if (now - foundAt >= HOLD_MS) {
+            cleanup();
+            console.log(`${LOG} Revealed + held highlight (${t}ms)`);
+            return;
+          }
+        } else if (container && isFullyVisible(row, container)) {
+          // S3 fallback: highlight is already the app's (stable) one — don't paint.
+          if (++settle >= SETTLE_FRAMES) {
+            cleanup();
+            console.log(`${LOG} Revealed (${t}ms, via ${foundVia})`);
+            return;
           }
         }
       } else if (!row && !hl && now - start >= GRACE_MS && now - lastNudgeAt >= NUDGE_INTERVAL_MS) {
@@ -193,7 +219,7 @@
 
   function onPathChange(prev, next) {
     if (prev === BATCHES_PATH && next !== BATCHES_PATH) {
-      generation++; // cancel any in-flight reveal
+      generation++; // cancel any in-flight reveal / highlight hold
       try {
         const id = new URL(location.href).searchParams.get('batchId');
         if (id) lastOpenedBatchId = id;
@@ -215,5 +241,5 @@
   setInterval(checkPath, POLL_MS);
   window.addEventListener('popstate', checkPath);
 
-  console.log(`${LOG} Active-row reveal active (MAIN world, v1.6.2 — thumbnail first, stable-highlight fallback)`);
+  console.log(`${LOG} Active-row reveal active (MAIN world, v1.7 — reveal by thumbnail + assert highlight ~2.5s)`);
 })();

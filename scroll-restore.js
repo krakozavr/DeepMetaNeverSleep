@@ -1,21 +1,26 @@
 // =============================================================================
-// FEATURE: Restore batch list scroll position (v1.2.x)
+// FEATURE: Restore batch list scroll position + active-row focus (v1.2.x)
 //
-// PROBLEM: On /contribute/esp/batches, clicking a batch row navigates away and
-// pressing "<" returns with the scroll reset to the top.
+// PROBLEM: On /contribute/esp/batches, clicking a batch row navigates away.
+// Pressing "<" returns with (a) the scroll reset to the top and (b) the row
+// "focus"/highlight lagging one navigation behind (the app highlights the
+// previously-opened batch, not the one you just came back from).
 //
 // ROOT CAUSE: Next.js App Router navigates via history.pushState and re-mounts /
-// re-renders the list asynchronously (again once data finishes loading), each
-// time resetting the scrollable container's scrollTop to 0.
+// re-renders the list asynchronously, resetting scrollTop to 0, and the app's
+// own active-row state is one step stale.
 //
-// FIX: Save scrollTop when leaving /batches; on return keep re-applying the
-// saved value across animation frames until it sticks AND keep watching past the
-// first settle so a late re-render/remount can't silently reset us back to 0.
+// FIX:
+//   • Scroll: save scrollTop when leaving /batches; on return re-apply it across
+//     animation frames until it sticks, and keep watching past the first settle
+//     so a late re-render/remount can't silently reset it to 0.
+//   • Focus: remember the batchId we navigated into; on return, find that row and
+//     focus it (preventScroll) so the highlight follows the batch you actually
+//     opened instead of the stale one.
 //
-// This build also (a) locates the scroll container by walking up from the list
-// table to its nearest scrollable ancestor — robust against class-name churn and
-// "wrong element" mistakes — and (b) logs URL transitions + container details to
-// make any remaining misbehavior diagnosable from the console.
+// The scroll container is located by walking up from the list table to its
+// nearest scrollable ancestor (robust against class-name churn). URL transitions
+// and chosen elements are logged to keep any remaining misbehavior diagnosable.
 //
 // MUST run in the page MAIN world (manifest.json "world": "MAIN") so the
 // history.pushState override sits in the same JS context Next.js navigates from.
@@ -25,12 +30,13 @@
   'use strict';
 
   const LOG = '[DeepMeta Never Sleep][ScrollRestore]';
-  const STORAGE_KEY = 'deepmeta_batches_scrollTop';
+  const SCROLL_KEY = 'deepmeta_batches_scrollTop';
+  const BATCH_KEY = 'deepmeta_batches_lastBatchId';
   const CONTAINER_SEL = 'div.relative.flex.flex-1.flex-col.overflow-y-auto';
   const BATCHES_PATH = '/contribute/esp/batches';
 
   const MAX_RESTORE_MS = 4000; // keep watching this long for late remounts
-  const SETTLE_FRAMES = 6;     // frames the value must hold on its own (~100ms)
+  const SETTLE_FRAMES = 6;     // frames a value must hold on its own (~100ms)
   const TOLERANCE_PX = 2;
 
   // Bumping this cancels any in-flight restore loop.
@@ -61,7 +67,12 @@
     const cls = (typeof el.className === 'string' && el.className.trim())
       ? '.' + el.className.trim().split(/\s+/).slice(0, 4).join('.')
       : '';
-    return `${el.tagName.toLowerCase()}${cls} [top=${Math.round(el.scrollTop)} scrollH=${el.scrollHeight} clientH=${el.clientHeight}]`;
+    return `${el.tagName.toLowerCase()}${cls}`;
+  }
+
+  function describeScroller(el) {
+    if (!el) return 'null';
+    return `${describe(el)} [top=${Math.round(el.scrollTop)} scrollH=${el.scrollHeight} clientH=${el.clientHeight}]`;
   }
 
   function isBatchesPath(url) {
@@ -72,40 +83,66 @@
     }
   }
 
+  function extractBatchId(url) {
+    try {
+      return new URL(url, location.origin).searchParams.get('batchId');
+    } catch {
+      return null;
+    }
+  }
+
+  // Locate the list row corresponding to a batchId. Rows navigate to
+  // /uploads?batchId=<id>, so the row is (or contains) an anchor to that URL.
+  // We return the focusable element that best represents the row.
+  function findBatchRow(id) {
+    if (!id) return null;
+    let el = document.querySelector(`a[href*="batchId=${id}"]`);
+    if (el) return el;
+    el = document.querySelector(`[href*="${id}"], [data-batch-id="${id}"], [data-id="${id}"]`);
+    return el || null;
+  }
+
   function cancelRestore() {
     restoreGeneration++;
   }
 
-  function restoreScrollWhenReady() {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved === null) return;
+  function restoreOnReturn() {
+    const savedScroll = sessionStorage.getItem(SCROLL_KEY);
+    const batchId = sessionStorage.getItem(BATCH_KEY);
+    sessionStorage.removeItem(SCROLL_KEY);
+    sessionStorage.removeItem(BATCH_KEY);
 
-    const scrollTo = parseInt(saved, 10);
-    sessionStorage.removeItem(STORAGE_KEY);
-    if (!Number.isFinite(scrollTo) || scrollTo <= 0) return;
+    const scrollTo = parseInt(savedScroll, 10);
+    const wantScroll = Number.isFinite(scrollTo) && scrollTo > 0;
+    const wantFocus = !!batchId;
+    if (!wantScroll && !wantFocus) return;
 
     const myGen = ++restoreGeneration;
     const start = performance.now();
-    let settled = 0;
-    let announced = false;
-    let everApplied = false;
-    let reCorrectionsAfterSettle = 0;
 
-    console.log(`${LOG} Restoring scrollTop to ${scrollTo}px`);
+    console.log(`${LOG} Restoring${wantScroll ? ` scrollTop=${scrollTo}px` : ''}${wantFocus ? ` focus batchId=${batchId}` : ''}`);
 
-    // Stop fighting the user if they scroll themselves.
+    // Stop fighting the user if they interact.
     let userInterrupted = false;
-    const onUserScroll = () => { userInterrupted = true; };
+    const onUserAct = () => { userInterrupted = true; };
     const opts = { passive: true, capture: true };
-    window.addEventListener('wheel', onUserScroll, opts);
-    window.addEventListener('touchstart', onUserScroll, opts);
-    window.addEventListener('keydown', onUserScroll, opts);
-
+    const events = ['wheel', 'touchstart', 'keydown', 'mousedown'];
+    events.forEach((e) => window.addEventListener(e, onUserAct, opts));
     function cleanup() {
-      window.removeEventListener('wheel', onUserScroll, opts);
-      window.removeEventListener('touchstart', onUserScroll, opts);
-      window.removeEventListener('keydown', onUserScroll, opts);
+      events.forEach((e) => window.removeEventListener(e, onUserAct, opts));
     }
+
+    // --- scroll state ---
+    let scrollSettled = 0;
+    let scrollAnnounced = false;
+    let scrollApplied = false;
+    let reCorrectionsAfterSettle = 0;
+    let scrollDone = !wantScroll;
+
+    // --- focus state ---
+    let focusSettled = 0;
+    let focusDone = !wantFocus;
+    let focusEverFound = false;
 
     function tick(now) {
       if (myGen !== restoreGeneration || userInterrupted) {
@@ -113,33 +150,53 @@
         return;
       }
 
-      const container = getContainer();
-      if (container) {
-        const maxScroll = container.scrollHeight - container.clientHeight;
-        // Only act once the list is tall enough to reach the target, otherwise
-        // the browser clamps scrollTop ("remembers but doesn't scroll").
-        if (maxScroll >= scrollTo - TOLERANCE_PX) {
-          if (Math.abs(container.scrollTop - scrollTo) <= TOLERANCE_PX) {
-            if (++settled >= SETTLE_FRAMES && !announced) {
-              announced = true;
-              console.log(`${LOG} Settled at ${scrollTo}px (${Math.round(now - start)}ms) on ${describe(container)} — keep watching for late remount`);
+      // ---- scroll ----
+      if (!scrollDone) {
+        const container = getContainer();
+        if (container) {
+          const maxScroll = container.scrollHeight - container.clientHeight;
+          if (maxScroll >= scrollTo - TOLERANCE_PX) {
+            if (Math.abs(container.scrollTop - scrollTo) <= TOLERANCE_PX) {
+              if (++scrollSettled >= SETTLE_FRAMES && !scrollAnnounced) {
+                scrollAnnounced = true;
+                console.log(`${LOG} Scroll settled at ${scrollTo}px (${Math.round(now - start)}ms) on ${describeScroller(container)} — keep watching for late remount`);
+              }
+            } else {
+              if (scrollAnnounced) reCorrectionsAfterSettle++;
+              container.scrollTop = scrollTo;
+              scrollSettled = 0;
+              scrollApplied = true;
             }
-          } else {
-            // Something moved/reset it. If this happens AFTER we already settled,
-            // it's the late Next.js re-render/remount — the real culprit.
-            if (announced) reCorrectionsAfterSettle++;
-            container.scrollTop = scrollTo;
-            settled = 0;
-            everApplied = true;
           }
         }
       }
 
-      if (now - start < MAX_RESTORE_MS) {
+      // ---- focus ----
+      if (!focusDone) {
+        const row = findBatchRow(batchId);
+        if (row) {
+          if (!focusEverFound) {
+            focusEverFound = true;
+            console.log(`${LOG} Found batch row to focus: ${describe(row)} (href=${row.getAttribute && row.getAttribute('href')})`);
+          }
+          if (document.activeElement === row) {
+            if (++focusSettled >= SETTLE_FRAMES) {
+              focusDone = true;
+              console.log(`${LOG} Focus settled on batch row ${batchId} (${Math.round(now - start)}ms)`);
+            }
+          } else {
+            try { row.focus({ preventScroll: true }); } catch { /* ignore */ }
+            focusSettled = 0;
+          }
+        }
+      }
+
+      if (now - start < MAX_RESTORE_MS && (!scrollDone || !focusDone)) {
         requestAnimationFrame(tick);
       } else {
         cleanup();
-        console.log(`${LOG} Done. applied=${everApplied} reCorrectionsAfterSettle=${reCorrectionsAfterSettle} final=${describe(getContainer())} target=${scrollTo}px`);
+        const c = getContainer();
+        console.log(`${LOG} Done. scroll{applied=${scrollApplied} reCorrectionsAfterSettle=${reCorrectionsAfterSettle} final=${describeScroller(c)} target=${wantScroll ? scrollTo + 'px' : 'n/a'}} focus{wanted=${wantFocus} found=${focusEverFound} active=${document.activeElement ? describe(document.activeElement) : 'null'}}`);
       }
     }
 
@@ -157,30 +214,36 @@
     } catch { /* keep raw */ }
     console.log(`${LOG} pushState: "${from}" -> "${to}"`);
 
-    // Leaving the batches page → save current scroll, cancel any running restore.
+    // Leaving the batches page → save scroll + the batchId we're opening,
+    // and cancel any running restore.
     if (location.pathname === BATCHES_PATH && !isBatchesPath(newUrl)) {
       cancelRestore();
       const container = getContainer();
       const selectorMatches = document.querySelectorAll(CONTAINER_SEL).length;
       if (container && container.scrollTop > 0) {
-        sessionStorage.setItem(STORAGE_KEY, Math.round(container.scrollTop));
-        console.log(`${LOG} Saved ${Math.round(container.scrollTop)}px from ${describe(container)} (selectorMatches=${selectorMatches})`);
+        sessionStorage.setItem(SCROLL_KEY, Math.round(container.scrollTop));
+        console.log(`${LOG} Saved ${Math.round(container.scrollTop)}px from ${describeScroller(container)} (selectorMatches=${selectorMatches})`);
       } else {
-        console.log(`${LOG} Nothing to save (container=${describe(container)}, selectorMatches=${selectorMatches})`);
+        console.log(`${LOG} Nothing to save (container=${describeScroller(container)}, selectorMatches=${selectorMatches})`);
+      }
+      const batchId = extractBatchId(newUrl);
+      if (batchId) {
+        sessionStorage.setItem(BATCH_KEY, batchId);
+        console.log(`${LOG} Remembered opened batchId=${batchId}`);
       }
     }
 
     origPushState(state, title, url);
 
     if (isBatchesPath(newUrl)) {
-      restoreScrollWhenReady();
+      restoreOnReturn();
     }
   };
 
   // Belt-and-suspenders for a real browser back/forward gesture.
   window.addEventListener('popstate', () => {
     if (location.pathname === BATCHES_PATH) {
-      restoreScrollWhenReady();
+      restoreOnReturn();
     }
   });
 

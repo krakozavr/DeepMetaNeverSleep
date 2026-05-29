@@ -107,6 +107,7 @@
     let foundVia = null;
     let foundAt = 0;
     let settle = 0;
+    let scrolled = false; // scroll at most once — chasing disrupts lazy indicators
 
     // Highlight-stability tracking (S3 fallback path).
     let hlLabel = null;
@@ -157,28 +158,37 @@
           console.log(`${LOG} Found target row via ${via} @${t}ms`);
         }
 
-        // Scroll ONLY when the row is off-screen — minimize programmatic scrolls
-        // so the app's lazy thumbnail loading isn't disrupted.
-        if (container && !isFullyVisible(row, container)) {
-          row.scrollIntoView({ block: 'center', inline: 'nearest' });
+        // Scroll AT MOST ONCE, when first found. Chasing the row as the list
+        // grows fires repeated programmatic scrolls that disrupt the app's
+        // lazy, IntersectionObserver-driven per-row indicators (status donuts).
+        // After the single scroll the browser's scroll anchoring keeps the row
+        // roughly in place on its own.
+        if (!scrolled && container) {
+          if (!isFullyVisible(row, container)) {
+            // Smooth (not instant) so the scroll passes through intermediate
+            // positions and fires continuous scroll/intersection events — like a
+            // manual scroll — letting the app's lazy per-row indicators render.
+            // An instant jump gives the loader a single tick and leaves rows
+            // around the target blank.
+            row.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+          }
+          scrolled = true;
         }
 
         if (foundVia === 'thumbnail') {
           // Assert the active highlight ourselves through the laggy preference
-          // render, then let go (the list is static afterwards).
+          // render, then let go (the list is static afterwards). No scrolling.
           paintHighlight(row);
           if (now - foundAt >= HOLD_MS) {
             cleanup();
             console.log(`${LOG} Revealed + held highlight (${t}ms)`);
             return;
           }
-        } else if (container && isFullyVisible(row, container)) {
+        } else if (++settle >= SETTLE_FRAMES) {
           // S3 fallback: highlight is already the app's (stable) one — don't paint.
-          if (++settle >= SETTLE_FRAMES) {
-            cleanup();
-            console.log(`${LOG} Revealed (${t}ms, via ${foundVia})`);
-            return;
-          }
+          cleanup();
+          console.log(`${LOG} Revealed (${t}ms, via ${foundVia})`);
+          return;
         }
       } else if (!row && !hl && now - start >= GRACE_MS && now - lastNudgeAt >= NUDGE_INTERVAL_MS) {
         // Nothing on screen yet — page down to trigger lazy pagination.
@@ -241,5 +251,5 @@
   setInterval(checkPath, POLL_MS);
   window.addEventListener('popstate', checkPath);
 
-  console.log(`${LOG} Active-row reveal active (MAIN world, v1.7 — reveal by thumbnail + assert highlight ~2.5s)`);
+  console.log(`${LOG} Active-row reveal active (MAIN world, v1.7.1 — scroll once + smooth, assert highlight ~2.5s)`);
 })();

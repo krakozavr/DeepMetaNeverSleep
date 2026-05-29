@@ -1,23 +1,27 @@
 // =============================================================================
 // FEATURE: Bring the batch you opened back into view (v1.6.x)
 //
-// HOW THE APP WORKS (learned from network logs):
+// HOW THE APP WORKS (from network logs):
 //   • The batch list is server-paginated: GET /api/dm-batches?...&page=1..N
 //     (25 rows/page). On return to /batches the app re-fetches every page it had
-//     loaded, sequentially — the full list takes ~2s to rebuild.
+//     loaded — the full list takes ~2s to rebuild.
 //   • The active-row highlight (class bg-sky-100) is driven by GET /api/preference
-//     and only appears once both the preference AND the page holding that batch
-//     have loaded. Watching the highlight is therefore racy right after return.
+//     and lands ~1-2s after return, so watching it right away is racy.
 //   • Each row's thumbnail is served from
 //         thumbs-deepmeta.creativ.zone/<batchId-without-dashes>/...
 //     so a row can be matched to a batchId deterministically via its <img>.
 //
-// STRATEGY: we already know the batchId we navigated into (from the URL). On
-// return, wait (poll) until that batch's row renders — i.e. until its page has
-// re-loaded — then gently scrollIntoView it, keeping it centered while the list
-// finishes growing. This targets the exact folder you opened, independent of the
-// highlight race and pagination timing. We touch nothing else: no History API,
-// no focus, no highlight — the app paints the highlight correctly on its own.
+// STRATEGY: we know the batchId we navigated into (from the URL). On return:
+//   1. Primary — find that batch's row by its thumbnail and scrollIntoView it.
+//      Deterministic and independent of the highlight race.
+//   2. Fallback (batch has no UUID thumbnail, e.g. S3-hosted) — wait until the
+//      app's highlight has *stabilized*, then reveal that row. We never jump to
+//      an instantaneous highlight, which could still be the stale previous one.
+//   3. If neither a row nor any highlight is present after a grace period, page
+//      down to trigger lazy pagination, then retry.
+//
+// We touch nothing else: no History API, no focus, no setting the highlight —
+// the app paints the active row on its own.
 //
 // MUST run in the page MAIN world (manifest.json "world": "MAIN").
 // =============================================================================
@@ -28,11 +32,12 @@
   const LOG = '[DeepMeta Never Sleep][ScrollRestore]';
   const BATCHES_PATH = '/contribute/esp/batches';
 
-  const MAX_MS = 8000;       // list can take ~2s to rebuild; allow margin + nudging
-  const SETTLE_FRAMES = 5;   // frames the row must stay centered before we stop
-  const POLL_MS = 150;       // path-change polling interval
-  const GRACE_MS = 2500;     // wait this long for auto-refetch before nudging
-  const NUDGE_INTERVAL_MS = 250; // pace of the fallback page-down scrolling
+  const MAX_MS = 8000;
+  const SETTLE_FRAMES = 5;        // frames the row must stay centered before we stop
+  const HIGHLIGHT_STABLE_MS = 500; // fallback: highlight must hold this long
+  const POLL_MS = 150;
+  const GRACE_MS = 2500;          // wait for auto-refetch before nudging
+  const NUDGE_INTERVAL_MS = 250;
 
   let generation = 0;
   let lastPath = location.pathname;
@@ -65,9 +70,14 @@
   }
 
   // Fallback: the row the app marked active (sky background).
-  function findActiveRowByHighlight() {
+  function findHighlightRow() {
     const scope = document.querySelector('main') || document;
     return scope.querySelector('tbody tr[class*="bg-sky-"]');
+  }
+
+  function rowLabel(row) {
+    if (!row) return null;
+    return (row.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50) || '(row)';
   }
 
   function isCentered(row, container) {
@@ -85,8 +95,11 @@
     let settle = 0;
     let foundVia = null;
 
-    // Fallback state: if the row's page doesn't auto-refetch, page down to
-    // trigger lazy pagination ourselves.
+    // Highlight-stability tracking (fallback path).
+    let hlLabel = null;
+    let hlStableSince = 0;
+
+    // Nudge state (only when nothing is on screen yet).
     let lastNudgeAt = 0;
     let lastNudgeHeight = 0;
     let bottomStreak = 0;
@@ -105,44 +118,54 @@
         cleanup();
         return;
       }
+      const t = Math.round(now - start);
 
+      // 1) Primary: deterministic thumbnail match.
       let row = findRowByBatchId(batchId);
       let via = 'thumbnail';
-      if (!row) { row = findActiveRowByHighlight(); via = 'highlight'; }
+
+      // 2) Fallback: a *stable* highlight (never an instantaneous, possibly
+      //    stale one).
+      const hl = row ? null : findHighlightRow();
+      if (!row) {
+        const label = rowLabel(hl);
+        if (label !== hlLabel) { hlLabel = label; hlStableSince = now; }
+        if (hl && now - hlStableSince >= HIGHLIGHT_STABLE_MS) {
+          row = hl;
+          via = 'highlight(stable)';
+        }
+      }
 
       if (row && row.getClientRects().length > 0) {
         const container = getScrollContainer();
         if (!foundVia) {
           foundVia = via;
-          console.log(`${LOG} Found target row via ${via} @${Math.round(now - start)}ms`);
+          console.log(`${LOG} Found target row via ${via} @${t}ms`);
         }
         if (container) {
           if (isCentered(row, container)) {
             if (++settle >= SETTLE_FRAMES) {
               cleanup();
-              console.log(`${LOG} Revealed target row (${Math.round(now - start)}ms, via ${foundVia})`);
+              console.log(`${LOG} Revealed target row (${t}ms, via ${foundVia})`);
               return;
             }
           } else {
-            // Re-center as the list grows above/below; gentle, never forced.
             row.scrollIntoView({ block: 'center', inline: 'nearest' });
             settle = 0;
           }
         }
-      } else if (now - start >= GRACE_MS && now - lastNudgeAt >= NUDGE_INTERVAL_MS) {
-        // Row still missing after the grace period — the page holding it didn't
-        // auto-refetch. Page down a screen to trigger lazy pagination ourselves.
+      } else if (!row && !hl && now - start >= GRACE_MS && now - lastNudgeAt >= NUDGE_INTERVAL_MS) {
+        // Nothing on screen yet — page down to trigger lazy pagination.
         const container = getScrollContainer();
         if (container) {
           if (lastNudgeAt === 0) {
-            console.log(`${LOG} Row not present after ${Math.round(now - start)}ms — nudging to load pages`);
+            console.log(`${LOG} Nothing yet after ${t}ms — nudging to load pages`);
           }
           const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
           if (atBottom && container.scrollHeight <= lastNudgeHeight + 2) {
-            // At the bottom and the list stopped growing → no more pages to load.
             if (++bottomStreak >= 3) {
               cleanup();
-              console.warn(`${LOG} Gave up: reached end of list, target row not found (batchId=${batchId || 'unknown'})`);
+              console.warn(`${LOG} Gave up: reached end of list, row not found (batchId=${batchId || 'unknown'})`);
               return;
             }
           } else {
@@ -161,7 +184,7 @@
         requestAnimationFrame(tick);
       } else {
         cleanup();
-        console.warn(`${LOG} Gave up: target row never appeared (batchId=${batchId || 'unknown'}, foundVia=${foundVia || 'none'})`);
+        console.warn(`${LOG} Gave up after ${t}ms (batchId=${batchId || 'unknown'}, foundVia=${foundVia || 'none'})`);
       }
     }
 
@@ -192,5 +215,5 @@
   setInterval(checkPath, POLL_MS);
   window.addEventListener('popstate', checkPath);
 
-  console.log(`${LOG} Active-row reveal active (MAIN world, v1.6.1 — targets opened batch by thumbnail, nudges if needed)`);
+  console.log(`${LOG} Active-row reveal active (MAIN world, v1.6.2 — thumbnail first, stable-highlight fallback)`);
 })();

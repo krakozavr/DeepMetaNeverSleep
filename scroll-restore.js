@@ -28,9 +28,11 @@
   const LOG = '[DeepMeta Never Sleep][ScrollRestore]';
   const BATCHES_PATH = '/contribute/esp/batches';
 
-  const MAX_MS = 6000;       // list can take ~2s to rebuild; allow margin
+  const MAX_MS = 8000;       // list can take ~2s to rebuild; allow margin + nudging
   const SETTLE_FRAMES = 5;   // frames the row must stay centered before we stop
   const POLL_MS = 150;       // path-change polling interval
+  const GRACE_MS = 2500;     // wait this long for auto-refetch before nudging
+  const NUDGE_INTERVAL_MS = 250; // pace of the fallback page-down scrolling
 
   let generation = 0;
   let lastPath = location.pathname;
@@ -83,6 +85,12 @@
     let settle = 0;
     let foundVia = null;
 
+    // Fallback state: if the row's page doesn't auto-refetch, page down to
+    // trigger lazy pagination ourselves.
+    let lastNudgeAt = 0;
+    let lastNudgeHeight = 0;
+    let bottomStreak = 0;
+
     let userInterrupted = false;
     const onUserAct = () => { userInterrupted = true; };
     const opts = { passive: true, capture: true };
@@ -121,6 +129,32 @@
             settle = 0;
           }
         }
+      } else if (now - start >= GRACE_MS && now - lastNudgeAt >= NUDGE_INTERVAL_MS) {
+        // Row still missing after the grace period — the page holding it didn't
+        // auto-refetch. Page down a screen to trigger lazy pagination ourselves.
+        const container = getScrollContainer();
+        if (container) {
+          if (lastNudgeAt === 0) {
+            console.log(`${LOG} Row not present after ${Math.round(now - start)}ms — nudging to load pages`);
+          }
+          const atBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 2;
+          if (atBottom && container.scrollHeight <= lastNudgeHeight + 2) {
+            // At the bottom and the list stopped growing → no more pages to load.
+            if (++bottomStreak >= 3) {
+              cleanup();
+              console.warn(`${LOG} Gave up: reached end of list, target row not found (batchId=${batchId || 'unknown'})`);
+              return;
+            }
+          } else {
+            bottomStreak = 0;
+          }
+          lastNudgeHeight = container.scrollHeight;
+          container.scrollTop = Math.min(
+            container.scrollTop + container.clientHeight * 0.85,
+            container.scrollHeight
+          );
+          lastNudgeAt = now;
+        }
       }
 
       if (now - start < MAX_MS) {
@@ -158,5 +192,5 @@
   setInterval(checkPath, POLL_MS);
   window.addEventListener('popstate', checkPath);
 
-  console.log(`${LOG} Active-row reveal active (MAIN world, v1.6 — targets opened batch by thumbnail)`);
+  console.log(`${LOG} Active-row reveal active (MAIN world, v1.6.1 — targets opened batch by thumbnail, nudges if needed)`);
 })();

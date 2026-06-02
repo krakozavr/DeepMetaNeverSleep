@@ -70,6 +70,75 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
+// --- Google Tasks integration ---
+
+const TASKS_ORIGIN = 'https://tasks.googleapis.com';
+const TASKS_SCOPES = ['https://www.googleapis.com/auth/tasks'];
+
+function getAuthToken(interactive) {
+  return new Promise((resolve, reject) => {
+    browserAPI.identity.getAuthToken({ interactive, scopes: TASKS_SCOPES }, token => {
+      if (browserAPI.runtime.lastError) {
+        reject(new Error(browserAPI.runtime.lastError.message));
+      } else {
+        resolve(token);
+      }
+    });
+  });
+}
+
+async function tasksApi(token, method, path, body) {
+  const res = await fetch(`${TASKS_ORIGIN}/tasks/v1${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) throw new Error(`Tasks API ${res.status} ${method} ${path}`);
+  return res.json();
+}
+
+async function findOrCreateList(token, name, storageKey) {
+  const { items = [] } = await tasksApi(token, 'GET', '/users/@me/lists');
+  const found = items.find(l => l.title === name);
+  if (found) return found.id;
+  const created = await tasksApi(token, 'POST', '/users/@me/lists', { title: name });
+  browserAPI.storage.local.set({ [storageKey]: created.id });
+  return created.id;
+}
+
+async function handleBriefLiked({ title, dueDate, espLink, isCc }) {
+  let token;
+  try {
+    token = await getAuthToken(false);
+  } catch (_) {
+    console.log('[DeepMeta Never Sleep] Google Tasks not connected — skipping');
+    return;
+  }
+
+  const listName = isCc ? 'CC Brief' : 'Creative Briefs';
+  const storageKey = isCc ? 'ccListId' : 'creativeListId';
+
+  const stored = await new Promise(resolve =>
+    browserAPI.storage.local.get({ ccListId: null, creativeListId: null }, resolve)
+  );
+  let listId = stored[storageKey];
+
+  if (!listId) {
+    listId = await findOrCreateList(token, listName, storageKey);
+  }
+
+  await tasksApi(token, 'POST', `/lists/${listId}/tasks`, {
+    title,
+    due: dueDate,
+    notes: espLink
+  });
+
+  console.log(`[DeepMeta Never Sleep] Task created: "${title}" → ${listName}`);
+}
+
 // Check if URL is a DeepMeta upload endpoint.
 // Matches only the real file-transfer endpoints. The /contribute/esp/uploads
 // page route is intentionally NOT matched: the SPA posts to it for page-state
@@ -213,8 +282,48 @@ function runStaleCleanup() {
 // Listen for messages from content scripts (for heartbeat to keep worker alive)
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HEARTBEAT') {
-    // Heartbeat to keep service worker alive
-    // Just receiving this message keeps the worker active
+    return;
+  }
+
+  if (message.type === 'BRIEF_LIKED') {
+    handleBriefLiked(message).catch(err =>
+      console.error('[DeepMeta Never Sleep] Task creation failed:', err.message)
+    );
+    return;
+  }
+
+  if (message.type === 'TASKS_CONNECT') {
+    getAuthToken(true)
+      .then(token => tasksApi(token, 'GET', '/users/@me/lists'))
+      .then(data => sendResponse({ ok: true, lists: data.items || [] }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'TASKS_GET_LISTS') {
+    getAuthToken(false)
+      .then(token => tasksApi(token, 'GET', '/users/@me/lists'))
+      .then(data => sendResponse({ ok: true, lists: data.items || [] }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'TASKS_DISCONNECT') {
+    getAuthToken(false)
+      .then(token => new Promise(resolve =>
+        browserAPI.identity.removeCachedAuthToken({ token }, resolve)
+      ))
+      .then(() => browserAPI.storage.local.remove(['ccListId', 'creativeListId']))
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (message.type === 'TASKS_IS_CONNECTED') {
+    getAuthToken(false)
+      .then(token => sendResponse({ ok: true, connected: !!token }))
+      .catch(() => sendResponse({ ok: true, connected: false }));
+    return true;
   }
 });
 

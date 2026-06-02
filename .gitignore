@@ -7,6 +7,9 @@ PACK/
 *.zip
 *.crx
 
+# Google Cloud OAuth credentials
+client_secret_*.json
+
 # OS/editor noise
 .DS_Store
 Thumbs.db

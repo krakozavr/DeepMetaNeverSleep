@@ -73,26 +73,47 @@
     };
   }
 
+  function extractDetailData() {
+    const espId = window.location.pathname.split('/').pop();
+    if (!espId) return null;
+    const h1 = document.querySelector('header h1');
+    const time = document.querySelector('time[datetime]');
+    if (!h1 || !time) return null;
+    return {
+      espId,
+      title: h1.textContent.trim(),
+      isoDeadline: time.getAttribute('datetime'),
+      isCc: !!document.querySelector('[class*="fuchsia"]')
+    };
+  }
+
   // --- Like click detection ---
 
   function onDocumentClick(event) {
-    const btn = event.target.closest('button[title="Like"]');
-    if (!btn) return;
+    // List view
+    const listBtn = event.target.closest('button[title="Like"]');
+    if (listBtn) {
+      const svg = listBtn.querySelector('svg');
+      if (!svg || svg.getAttribute('fill') === 'currentColor') return;
+      const article = listBtn.closest('article');
+      if (!article) return;
+      const data = extractArticleData(article);
+      if (!data) return;
+      pendingSnapshot = new Set(likedEspIds);
+      pendingData = data;
+      console.log(`${LOG} Like click: "${data.title}"`);
+      return;
+    }
 
-    // SVG fill="currentColor" means the brief is already liked → this is an unlike → skip
-    const svg = btn.querySelector('svg');
-    if (!svg || svg.getAttribute('fill') === 'currentColor') return;
-
-    const article = btn.closest('article');
-    if (!article) return;
-
-    const data = extractArticleData(article);
+    // Detail view — espId is in the URL, no diff needed
+    const detailBtn = event.target.closest('button[title="Like / Remove like"]');
+    if (!detailBtn) return;
+    const svg = detailBtn.querySelector('svg');
+    if (!svg || svg.getAttribute('fill') === 'currentColor') return; // unlike → skip
+    const data = extractDetailData();
     if (!data) return;
-
-    // Snapshot current liked state before the like POST fires
-    pendingSnapshot = new Set(likedEspIds);
-    pendingData = data;
-    console.log(`${LOG} Like click: "${data.title}"`);
+    console.log(`${LOG} Like click (detail): "${data.title}"`);
+    dispatchLike(data.espId, data);
   }
 
   document.addEventListener('click', onDocumentClick, true);

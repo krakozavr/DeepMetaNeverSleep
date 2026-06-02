@@ -69,36 +69,61 @@ function showNotConnected() {
   elConnected.hidden = true;
 }
 
+const TASKS_API = 'https://tasks.googleapis.com/tasks/v1';
+
+function fetchLists(token) {
+  return fetch(`${TASKS_API}/users/@me/lists`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }).then(r => r.json()).then(d => d.items || []);
+}
+
 function initTasksUi() {
-  chrome.runtime.sendMessage({ type: 'TASKS_IS_CONNECTED' }, response => {
-    if (!response?.connected) { showNotConnected(); return; }
-    chrome.runtime.sendMessage({ type: 'TASKS_GET_LISTS' }, resp => {
-      if (!resp?.ok) { showNotConnected(); return; }
-      chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
-        showConnected(resp.lists, stored.ccListId, stored.creativeListId);
-      });
-    });
+  chrome.identity.getAuthToken({ interactive: false }, token => {
+    if (chrome.runtime.lastError || !token) { showNotConnected(); return; }
+    fetchLists(token)
+      .then(lists => {
+        chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
+          showConnected(lists, stored.ccListId, stored.creativeListId);
+        });
+      })
+      .catch(() => showNotConnected());
   });
 }
 
 btnConnect.addEventListener('click', () => {
   btnConnect.disabled = true;
   btnConnect.textContent = 'Connecting…';
-  chrome.runtime.sendMessage({ type: 'TASKS_CONNECT' }, response => {
+  chrome.identity.getAuthToken({ interactive: true }, token => {
     btnConnect.disabled = false;
     btnConnect.textContent = 'Connect Google Account';
-    if (!response?.ok) { setStatus('Failed: ' + (response?.error || 'unknown')); return; }
-    chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
-      showConnected(response.lists, stored.ccListId, stored.creativeListId);
-      setStatus('Connected');
-    });
+    if (chrome.runtime.lastError || !token) {
+      setStatus('Failed: ' + (chrome.runtime.lastError?.message || 'unknown'));
+      return;
+    }
+    fetchLists(token)
+      .then(lists => {
+        chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
+          showConnected(lists, stored.ccListId, stored.creativeListId);
+          setStatus('Connected');
+        });
+      })
+      .catch(err => setStatus('Failed: ' + err.message));
   });
 });
 
 btnDisconnect.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'TASKS_DISCONNECT' }, () => {
-    showNotConnected();
-    setStatus('Disconnected');
+  chrome.identity.getAuthToken({ interactive: false }, token => {
+    const finish = () => {
+      chrome.storage.local.remove(['ccListId', 'creativeListId'], () => {
+        showNotConnected();
+        setStatus('Disconnected');
+      });
+    };
+    if (token) {
+      chrome.identity.removeCachedAuthToken({ token }, finish);
+    } else {
+      finish();
+    }
   });
 });
 

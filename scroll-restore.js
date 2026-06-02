@@ -73,6 +73,9 @@
     settings = { ...settings, ...nextSettings };
     if (!settings.restoreSearchResults) {
       clearReturnSearch('settings off');
+      // Also drop any restored-search page state so the 150ms poll stops
+      // re-forcing the input value and re-injecting the fallback clear button.
+      clearRestoredSearchPage('settings off');
     }
     if (!settings.restoreBatchPosition) {
       generation++;

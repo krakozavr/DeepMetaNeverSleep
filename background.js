@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS = {
 };
 
 let settings = { ...DEFAULT_SETTINGS };
+let settingsLoaded = false;
 
 const STATE_TITLES = {
   active:  'DeepMetaNeverSleep - Active',
@@ -14,8 +15,14 @@ const STATE_TITLES = {
   error:   'DeepMetaNeverSleep - Error'
 };
 
-// Set extension icon and tooltip based on state: 'active', 'waiting', 'error'
+let currentIconState = null;
+
+// Set extension icon and tooltip based on state: 'active', 'waiting', 'error'.
+// No-op when the requested state already matches the current one; otherwise
+// each upload request would re-issue setIcon (which re-fetches three PNGs).
 function setIcon(state) {
+  if (currentIconState === state) return;
+  currentIconState = state;
   browserAPI.action.setIcon({
     path: {
       16: `icons/icon-16-${state}.png`,
@@ -42,6 +49,7 @@ const RELEASE_GRACE_PERIOD_MINUTES = 1;
 function loadSettings(callback) {
   browserAPI.storage.local.get(DEFAULT_SETTINGS, (stored) => {
     settings = { ...DEFAULT_SETTINGS, ...stored };
+    settingsLoaded = true;
     if (callback) callback();
   });
 }
@@ -62,12 +70,14 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-// Check if URL is a DeepMeta upload endpoint
+// Check if URL is a DeepMeta upload endpoint.
+// Matches only the real file-transfer endpoints. The /contribute/esp/uploads
+// page route is intentionally NOT matched: the SPA posts to it for page-state
+// work that is not a file upload, which would otherwise flip the icon active.
 function isDeepMetaUploadUrl(url) {
   return url.includes('/api/dm-initialize-upload') ||
          url.includes('/api/dm-authorize-upload-chunk') ||
          url.includes('/api/dm-finalize-upload') ||
-         url.includes('/contribute/esp/uploads') ||
          (url.includes('dm-proxy-') && url.includes('.workers.dev'));
 }
 
@@ -219,6 +229,14 @@ browserAPI.tabs.onRemoved.addListener((tabId) => {
 
 // Update power management state based on active uploads
 function updatePowerState() {
+  if (!settingsLoaded) {
+    // Defer power-state decisions until the user's saved settings have loaded.
+    // On a cold service-worker start, webRequest events can fire before
+    // storage.local.get resolves; acting now would mean honoring the default
+    // (preventSleepActiveUploads:true) even when the user disabled it.
+    // loadSettings's callback will re-run updatePowerState to reconcile.
+    return;
+  }
   if (!settings.preventSleepActiveUploads) {
     browserAPI.alarms.clear(GRACE_PERIOD_ALARM);
     browserAPI.power.releaseKeepAwake();
@@ -292,4 +310,4 @@ async function checkExistingTabs() {
   }
 }
 
-loadSettings();
+loadSettings(() => updatePowerState());

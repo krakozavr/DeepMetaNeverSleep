@@ -537,7 +537,7 @@
   }
 
   function rowOf(el) {
-    return el.closest('tr') || el.closest('[role="row"]') || el.closest('li') || el;
+    return el.closest('tr') || el.closest('[role="row"]') || el.closest('li') || el.closest('article') || el;
   }
 
   function imageKey(src) {
@@ -571,7 +571,7 @@
     }
 
     if (lastOpenedRowImageKeys.length > 0) {
-      const rows = Array.from(scope.querySelectorAll('tbody tr, [role="row"], li'));
+      const rows = Array.from(scope.querySelectorAll('tbody tr, [role="row"], li, article'));
       const row = rows.find((candidate) => {
         const keys = rowImageKeys(candidate);
         return keys.some((candidateKey) => lastOpenedRowImageKeys.includes(candidateKey));
@@ -580,7 +580,7 @@
     }
 
     if (lastOpenedRowLabel) {
-      const rows = Array.from(scope.querySelectorAll('tbody tr, [role="row"], li'));
+      const rows = Array.from(scope.querySelectorAll('tbody tr, [role="row"], li, article'));
       const row = rows.find((candidate) => rowLabel(candidate) === lastOpenedRowLabel);
       if (row) return row;
     }
@@ -614,7 +614,7 @@
   // Fallback: the row the app marked active (sky background).
   function findHighlightRow() {
     const scope = document.querySelector('main') || document;
-    return scope.querySelector('tbody tr[class*="bg-sky-"]');
+    return scope.querySelector('tbody tr[class*="bg-sky-"], article[class*="bg-sky-"]');
   }
 
   function rowLabel(row) {
@@ -633,7 +633,7 @@
   // when /api/preference resolves; we re-apply each frame during the hold window.
   function paintHighlight(target) {
     const scope = document.querySelector('main') || document;
-    scope.querySelectorAll('tbody tr.bg-sky-100').forEach((tr) => {
+    scope.querySelectorAll('tbody tr.bg-sky-100, article.bg-sky-100').forEach((tr) => {
       if (tr !== target) HL_CLASSES.forEach((c) => tr.classList.remove(c));
     });
     HL_CLASSES.forEach((c) => target.classList.add(c));

@@ -294,9 +294,15 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'TASKS_CONNECT') {
     getAuthToken(true)
-      .then(token => tasksApi(token, 'GET', '/users/@me/lists'))
+      .then(token => {
+        console.log('[DeepMeta Never Sleep] Got auth token, fetching lists...');
+        return tasksApi(token, 'GET', '/users/@me/lists');
+      })
       .then(data => sendResponse({ ok: true, lists: data.items || [] }))
-      .catch(err => sendResponse({ ok: false, error: err.message }));
+      .catch(err => {
+        console.error('[DeepMeta Never Sleep] TASKS_CONNECT failed:', err.message);
+        sendResponse({ ok: false, error: err.message });
+      });
     return true;
   }
 

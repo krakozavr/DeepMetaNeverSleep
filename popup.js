@@ -87,7 +87,7 @@ btnConnect.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'TASKS_CONNECT' }, response => {
     btnConnect.disabled = false;
     btnConnect.textContent = 'Connect Google Account';
-    if (!response?.ok) { setStatus('Connection failed'); return; }
+    if (!response?.ok) { setStatus('Failed: ' + (response?.error || 'unknown')); return; }
     chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
       showConnected(response.lists, stored.ccListId, stored.creativeListId);
       setStatus('Connected');

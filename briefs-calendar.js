@@ -58,7 +58,6 @@
       espLink,
       isCc: data.isCc
     }, location.origin);
-    console.log(`${LOG} Message posted to content bridge`);
   }
 
   // --- DOM helpers ---

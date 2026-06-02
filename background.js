@@ -281,14 +281,11 @@ function runStaleCleanup() {
 
 // Listen for messages from content scripts (for heartbeat to keep worker alive)
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('[DeepMeta Never Sleep] Message received:', message.type);
-
   if (message.type === 'HEARTBEAT') {
     return;
   }
 
   if (message.type === 'BRIEF_LIKED') {
-    console.log('[DeepMeta Never Sleep] Handling BRIEF_LIKED:', message.title);
     handleBriefLiked(message).catch(err =>
       console.error('[DeepMeta Never Sleep] Task creation failed:', err.message)
     );
@@ -297,10 +294,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'TASKS_CONNECT') {
     getAuthToken(true)
-      .then(token => {
-        console.log('[DeepMeta Never Sleep] Got auth token, fetching lists...');
-        return tasksApi(token, 'GET', '/users/@me/lists');
-      })
+      .then(token => tasksApi(token, 'GET', '/users/@me/lists'))
       .then(data => sendResponse({ ok: true, lists: data.items || [] }))
       .catch(err => {
         console.error('[DeepMeta Never Sleep] TASKS_CONNECT failed:', err.message);

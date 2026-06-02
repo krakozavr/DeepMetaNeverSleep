@@ -3,6 +3,7 @@
   "name": "DeepMeta Never Sleep",
   "version": "1.9.0",
   "description": "Prevents your computer from sleeping during active DeepMeta file uploads",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqv8pCM0EGuqA5fcMl22HWZlO+hwdWZkyUJud5VXdlpwK5xcgI0KPGwxPk974ubTcdOj4XOK1n/+OcWWnKJ9cs0Br0EvF4hs0RxqKBOvfjUQkt2aMxLyWS/TZTrLHEvloEIwWQi/ZWWWxsY6S2ss5sCNh2NmEcGAaBPEOAHRnk2v3xZvN4bJV8QkkyVwc5Af0PaByFGLC5y2FJpVwAgbtxXEKiwNQqQrpz/L1BQYYYtlXDS7siwsAS3vVVG7Gtn2hXlqmKdtEs3bwkGJc6tlMLzUkjFRI53NbCb64I+lhV5EcP9SUMu3Qg/yAdnF7MGXABp5an9wvDVT1OouHF5TbNQIDAQAB",
   "permissions": [
     "tabs",
     "power",
@@ -11,6 +12,10 @@
     "storage",
     "identity"
   ],
+  "oauth2": {
+    "client_id": "283084521733-kdr21rmqd9dof6trl9knltukpcc1tha4.apps.googleusercontent.com",
+    "scopes": ["https://www.googleapis.com/auth/tasks"]
+  },
   "host_permissions": [
     "https://deepmeta.creativ.zone/*",
     "https://*.workers.dev/*"

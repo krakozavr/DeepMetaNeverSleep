@@ -58,8 +58,9 @@
         espLink,
         isCc: data.isCc
       });
-    } catch (_) {
-      // Extension context invalidated — page unloading
+      console.log(`${LOG} Message sent to background`);
+    } catch (err) {
+      console.error(`${LOG} sendMessage failed:`, err);
     }
   }
 

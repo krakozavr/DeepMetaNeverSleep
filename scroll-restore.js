@@ -558,15 +558,17 @@
 
   // Primary: the row whose thumbnail belongs to the opened batch.
   function findRowByBatchId(batchId) {
-    if (!batchId) return null;
     const scope = document.querySelector('main') || document;
-    const link = Array.from(scope.querySelectorAll('a[href*="batchId="]'))
-      .find((candidate) => parseUrl(candidate.href)?.searchParams.get('batchId') === batchId);
-    if (link) return rowOf(link);
 
-    const key = batchId.replace(/-/g, '');
-    const img = scope.querySelector(`img[src*="${key}"]`);
-    if (img) return rowOf(img);
+    if (batchId) {
+      const link = Array.from(scope.querySelectorAll('a[href*="batchId="]'))
+        .find((candidate) => parseUrl(candidate.href)?.searchParams.get('batchId') === batchId);
+      if (link) return rowOf(link);
+
+      const key = batchId.replace(/-/g, '');
+      const img = scope.querySelector(`img[src*="${key}"]`);
+      if (img) return rowOf(img);
+    }
 
     if (lastOpenedRowImageKeys.length > 0) {
       const rows = Array.from(scope.querySelectorAll('tbody tr, [role="row"], li'));

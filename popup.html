@@ -40,6 +40,39 @@
       <input type="checkbox" id="restoreBatchPosition">
     </label>
 
+    <div class="section-divider"></div>
+
+    <div class="section-header">
+      <strong>Google Tasks</strong>
+      <small>Create a task when you like a brief.</small>
+    </div>
+
+    <div id="tasksNotConnected">
+      <button type="button" id="btnConnect" class="btn-action">Connect Google Account</button>
+    </div>
+
+    <div id="tasksConnected" hidden>
+      <button type="button" id="btnDisconnect" class="btn-action btn-action--secondary">Disconnect</button>
+
+      <label class="setting setting--select">
+        <span>
+          <strong>CC briefs list</strong>
+        </span>
+        <select id="ccListSelect">
+          <option value="">Select list…</option>
+        </select>
+      </label>
+
+      <label class="setting setting--select">
+        <span>
+          <strong>Creative briefs list</strong>
+        </span>
+        <select id="creativeListSelect">
+          <option value="">Select list…</option>
+        </select>
+      </label>
+    </div>
+
     <p class="status" id="status" role="status"></p>
   </main>
 

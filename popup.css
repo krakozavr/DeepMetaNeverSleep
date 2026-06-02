@@ -91,3 +91,76 @@ input[type="checkbox"] {
     color: #8ecf90;
   }
 }
+
+.section-divider {
+  border-top: 1px solid #d8dde7;
+  margin: 4px 0 0;
+}
+
+.section-header {
+  padding: 10px 0 2px;
+}
+
+.section-header strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.section-header small {
+  display: block;
+  margin-top: 2px;
+  color: #5f6b7a;
+  font-size: 11px;
+}
+
+.btn-action {
+  display: block;
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 6px 12px;
+  border: 1px solid #1f6feb;
+  border-radius: 4px;
+  background: #1f6feb;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.btn-action:hover { background: #1a5fd4; border-color: #1a5fd4; }
+.btn-action:disabled { opacity: 0.6; cursor: default; }
+
+.btn-action--secondary {
+  background: transparent;
+  color: #5f6b7a;
+  border-color: #d8dde7;
+  font-weight: 400;
+}
+
+.btn-action--secondary:hover { background: #f0f3f8; }
+
+.setting--select {
+  align-items: center;
+}
+
+.setting--select select {
+  font-size: 11px;
+  padding: 3px 6px;
+  border: 1px solid #d8dde7;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  max-width: 130px;
+  color: #172033;
+}
+
+@media (prefers-color-scheme: dark) {
+  .section-divider { border-top-color: #303747; }
+  .section-header small { color: #a8b3c2; }
+  .btn-action--secondary { color: #a8b3c2; border-color: #303747; }
+  .btn-action--secondary:hover { background: #1e2535; }
+  .setting--select select { background: #1e2535; border-color: #303747; color: #eef2f8; }
+}

@@ -47,10 +47,17 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 });
 
 window.addEventListener('message', (event) => {
-  if (event.source !== window || event.data?.source !== 'DMNS_SETTINGS_REQUEST') {
+  if (event.source !== window) return;
+
+  if (event.data?.source === 'DMNS_SETTINGS_REQUEST') {
+    loadAndPostSettings();
     return;
   }
-  loadAndPostSettings();
+
+  if (event.data?.source === 'DMNS_BRIEF_LIKED') {
+    const { source, ...payload } = event.data;
+    chrome.runtime.sendMessage({ type: 'BRIEF_LIKED', ...payload }).catch(() => {});
+  }
 });
 
 loadAndPostSettings();

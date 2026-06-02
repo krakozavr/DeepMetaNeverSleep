@@ -50,18 +50,15 @@
   function dispatchLike(espId, data) {
     const espLink = ESP_BASE + espId;
     console.log(`${LOG} Brief liked: "${data.title}" (${data.isCc ? 'CC' : 'Creative'}) → ${espLink}`);
-    try {
-      chrome.runtime.sendMessage({
-        type: 'BRIEF_LIKED',
-        title: data.title,
-        dueDate: data.isoDeadline,
-        espLink,
-        isCc: data.isCc
-      });
-      console.log(`${LOG} Message sent to background`);
-    } catch (err) {
-      console.error(`${LOG} sendMessage failed:`, err);
-    }
+    // MAIN world has no chrome.runtime — bridge via postMessage to isolated content.js
+    window.postMessage({
+      source: 'DMNS_BRIEF_LIKED',
+      title: data.title,
+      dueDate: data.isoDeadline,
+      espLink,
+      isCc: data.isCc
+    }, location.origin);
+    console.log(`${LOG} Message posted to content bridge`);
   }
 
   // --- DOM helpers ---

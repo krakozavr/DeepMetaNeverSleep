@@ -103,7 +103,10 @@ async function tasksApi(token, method, path, body) {
 async function findOrCreateList(token, name, storageKey) {
   const { items = [] } = await tasksApi(token, 'GET', '/users/@me/lists');
   const found = items.find(l => l.title === name);
-  if (found) return found.id;
+  if (found) {
+    browserAPI.storage.local.set({ [storageKey]: found.id });
+    return found.id;
+  }
   const created = await tasksApi(token, 'POST', '/users/@me/lists', { title: name });
   browserAPI.storage.local.set({ [storageKey]: created.id });
   return created.id;
@@ -118,7 +121,7 @@ async function handleBriefLiked({ title, dueDate, espLink, isCc }) {
     return;
   }
 
-  const listName = isCc ? 'CC Brief' : 'Creative Briefs';
+  const listName = isCc ? 'CC Briefs' : 'Creative Briefs';
   const storageKey = isCc ? 'ccListId' : 'creativeListId';
 
   const stored = await new Promise(resolve =>

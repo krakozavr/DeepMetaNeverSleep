@@ -2,8 +2,6 @@
 
 **Last updated: 2026-06-02**
 
-_Also published at [docs/privacy-policy.md](docs/privacy-policy.md) — keep both in sync when editing._
-
 ## Summary
 
 DeepMeta Never Sleep does not collect, store, or transmit any personal data to the developer or any third party.

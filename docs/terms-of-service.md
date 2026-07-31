@@ -2,8 +2,6 @@
 
 **Last updated: 2026-07-31**
 
-_Also published at [docs/terms-of-service.md](docs/terms-of-service.md) — keep both in sync when editing._
-
 ## Summary
 
 DeepMeta Never Sleep is a free, independent browser extension that helps DeepMeta contributors keep their computer awake during uploads and, optionally, create Google Tasks reminders from liked briefs. By installing or using the extension, you agree to these terms.
@@ -14,7 +12,7 @@ DeepMeta Never Sleep is a free, independent browser extension that helps DeepMet
 - Restores your search results and scroll position when you return to a batch list.
 - Optionally, when you connect your Google account, creates a task in your own Google Tasks account when you like a brief on DeepMeta.
 
-See the [Privacy Policy](PRIVACY_POLICY.md) for details on what data the extension accesses and how it's handled.
+See the [Privacy Policy](privacy-policy.md) for details on what data the extension accesses and how it's handled.
 
 ## No affiliation
 

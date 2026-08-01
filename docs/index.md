@@ -10,6 +10,10 @@
 
 Everything runs locally in your browser. Nothing is collected, sold, or sent to the developer.
 
+## Install
+
+[Get it from the Chrome Web Store](https://chromewebstore.google.com/detail/deepmeta-never-sleep/gnidnjajinpanehhpcakgdanaeffjekg) — works in Chrome, Edge, and other Chromium-based browsers.
+
 ## How it works
 
 - **Upload detection** — a content script scoped only to `deepmeta.creativ.zone` and its Cloudflare Workers upload proxy watches network request lifecycle events (start/complete/fail) to know when to hold the system awake, via the browser's Power Management API (`chrome.power`).

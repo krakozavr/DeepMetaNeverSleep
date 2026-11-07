@@ -1,12 +1,15 @@
 // Content script (MAIN world) — briefs page only.
-// Wraps window.fetch to track liked espIds via /api/dm-briefs responses.
+// Wraps window.fetch to track liked espIds via the briefs list API responses.
 // Detects like-button clicks, snapshots liked set, diffs post-like response
 // to find the new espId, then sends complete brief data to background.
 (function () {
   'use strict';
 
   const LOG = '[DeepMeta Never Sleep][Briefs]';
-  const BRIEFS_API = '/api/dm-briefs';
+  // Briefs list endpoint. DeepMeta moved it from /api/dm-briefs to
+  // /api/v1/dm/briefs (Nov 2026); match both. Sub-routes such as
+  // /api/v1/dm/briefs/interest-sync are excluded.
+  const BRIEFS_API_RE = /\/api\/(?:v\d+\/dm\/briefs|dm-briefs)(?:[?#]|$)/;
   const ESP_BASE = 'https://esp.gettyimages.com/contribute/briefs/detail/';
 
   let likedEspIds = new Set();  // espIds currently known to have rating:100
@@ -20,7 +23,7 @@
     const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
     const promise = _fetch.apply(this, args);
 
-    if (url.includes(BRIEFS_API)) {
+    if (BRIEFS_API_RE.test(url)) {
       promise.then(r => r.clone().json().then(onBriefsResponse).catch(() => {}));
     }
 

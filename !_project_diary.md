@@ -1,5 +1,16 @@
 # DeepMeta Never Sleep — Project Diary
 
+## 2026-11-07 — v1.10.1: Briefs API moved, list-view likes stopped creating tasks
+
+### Symptom
+List-view like logged `Like click: "…"` but never `Brief liked: …`; no Google Task created (Google connection itself was fine).
+
+### Cause
+DeepMeta renamed the briefs list endpoint `/api/dm-briefs` → `/api/v1/dm/briefs`. The fetch hook matched only the old path, so neither the baseline nor the post-like response was ever seen and the espId diff never ran. Confirmed via console capture: after `PUT /api/v1/cz/likes/{uuid}` with `{"rating":100}`, the page refetches `GET /api/v1/dm/briefs?...` and the new espId appears with `rating:100`. The like PUT uses an internal UUID, not the espId, so the diff approach is still needed.
+
+### Fix
+Match both paths with a regex; exclude sub-routes like `/api/v1/dm/briefs/interest-sync` (polled every ~5s, returns an object).
+
 ## 2026-06-02 — v1.10.0: Detail page like detection
 
 ### Problem

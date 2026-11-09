@@ -97,7 +97,9 @@ async function tasksApi(token, method, path, body) {
     body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) throw new Error(`Tasks API ${res.status} ${method} ${path}`);
-  return res.json();
+  // DELETE returns 204 with an empty body
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
 }
 
 async function findOrCreateList(token, name, storageKey) {
@@ -140,6 +142,65 @@ async function handleBriefLiked({ title, dueDate, espLink, isCc }) {
   });
 
   console.log(`[DeepMeta Never Sleep] Task created: "${title}" → ${listName}`);
+}
+
+const BRIEF_LIST_NAMES = ['CC Briefs', 'Creative Briefs'];
+
+// Lists that may hold brief tasks: the ones saved in storage plus any list
+// named like the defaults. Never creates a list.
+async function getBriefListIds(token) {
+  const stored = await new Promise(resolve =>
+    browserAPI.storage.local.get({ ccListId: null, creativeListId: null }, resolve)
+  );
+  const ids = new Set([stored.ccListId, stored.creativeListId].filter(Boolean));
+  const { items = [] } = await tasksApi(token, 'GET', '/users/@me/lists');
+  for (const list of items) {
+    if (BRIEF_LIST_NAMES.includes(list.title)) ids.add(list.id);
+  }
+  return [...ids];
+}
+
+async function listAllTasks(token, listId) {
+  const tasks = [];
+  let pageToken = '';
+  do {
+    const q = `?maxResults=100&showCompleted=true&showHidden=true${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+    const page = await tasksApi(token, 'GET', `/lists/${listId}/tasks${q}`);
+    tasks.push(...(page.items || []));
+    pageToken = page.nextPageToken || '';
+  } while (pageToken);
+  return tasks;
+}
+
+async function handleBriefUnliked({ title, espLink }) {
+  let token;
+  try {
+    token = await getAuthToken(false);
+  } catch (_) {
+    console.log('[DeepMeta Never Sleep] Google Tasks not connected — skipping');
+    return;
+  }
+
+  let removed = 0;
+  for (const listId of await getBriefListIds(token)) {
+    let tasks;
+    try {
+      tasks = await listAllTasks(token, listId);
+    } catch (err) {
+      // A stale stored list ID (list deleted in Google Tasks) gives 404 — skip it
+      console.warn(`[DeepMeta Never Sleep] Cannot read list ${listId}: ${err.message}`);
+      continue;
+    }
+    for (const task of tasks) {
+      if ((task.notes || '').trim() !== espLink) continue;
+      await tasksApi(token, 'DELETE', `/lists/${listId}/tasks/${task.id}`);
+      removed++;
+    }
+  }
+
+  console.log(removed
+    ? `[DeepMeta Never Sleep] Task removed: "${title}" (${removed})`
+    : `[DeepMeta Never Sleep] No task found for unliked brief "${title}" → ${espLink}`);
 }
 
 // Check if URL is a DeepMeta upload endpoint.
@@ -291,6 +352,13 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'BRIEF_LIKED') {
     handleBriefLiked(message).catch(err =>
       console.error('[DeepMeta Never Sleep] Task creation failed:', err.message)
+    );
+    return;
+  }
+
+  if (message.type === 'BRIEF_UNLIKED') {
+    handleBriefUnliked(message).catch(err =>
+      console.error('[DeepMeta Never Sleep] Task removal failed:', err.message)
     );
     return;
   }

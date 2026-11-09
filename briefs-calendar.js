@@ -1,7 +1,8 @@
 // Content script (MAIN world) — briefs page only.
 // Wraps window.fetch to track liked espIds via the briefs list API responses.
-// Detects like-button clicks, snapshots liked set, diffs post-like response
-// to find the new espId, then sends complete brief data to background.
+// Detects like/unlike button clicks, snapshots the liked set, diffs the
+// post-click response to find the espId that changed, then sends the brief
+// data to background (create task on like, remove task on unlike).
 (function () {
   'use strict';
 
@@ -13,8 +14,10 @@
   const ESP_BASE = 'https://esp.gettyimages.com/contribute/briefs/detail/';
 
   let likedEspIds = new Set();  // espIds currently known to have rating:100
-  let pendingSnapshot = null;   // snapshot of likedEspIds taken just before like POST
-  let pendingData = null;       // { title, isoDeadline, isCc } extracted from DOM at click
+  // List-view clicks waiting for the refetch that reveals their espId:
+  // { snapshot: Set of liked espIds before the click, data: { title, isoDeadline, isCc } }
+  let pendingLike = null;
+  let pendingUnlike = null;
 
   // --- Fetch interception ---
 
@@ -37,25 +40,36 @@
       items.filter(item => item.rating === 100).map(item => item.espId)
     );
 
-    // If there is a pending like, diff to find the newly added espId
-    if (pendingSnapshot !== null && pendingData !== null) {
-      const addedId = [...newLiked].find(id => !pendingSnapshot.has(id));
-      if (addedId) {
-        dispatchLike(addedId, pendingData);
-        pendingSnapshot = null;
-        pendingData = null;
+    if (pendingLike) {
+      const added = [...newLiked].filter(id => !pendingLike.snapshot.has(id));
+      if (added.length === 1) {
+        dispatch('DMNS_BRIEF_LIKED', added[0], pendingLike.data);
+        pendingLike = null;
+      }
+    }
+
+    if (pendingUnlike) {
+      // Only consider espIds present in this response, so a brief that merely
+      // dropped out of a filtered/paged response isn't mistaken for an unlike.
+      const present = new Set(items.map(item => item.espId));
+      const removed = [...pendingUnlike.snapshot]
+        .filter(id => present.has(id) && !newLiked.has(id));
+      if (removed.length === 1) {
+        dispatch('DMNS_BRIEF_UNLIKED', removed[0], pendingUnlike.data);
+        pendingUnlike = null;
       }
     }
 
     likedEspIds = newLiked;
   }
 
-  function dispatchLike(espId, data) {
+  function dispatch(source, espId, data) {
     const espLink = ESP_BASE + espId;
-    console.log(`${LOG} Brief liked: "${data.title}" (${data.isCc ? 'CC' : 'Creative'}) → ${espLink}`);
+    const verb = source === 'DMNS_BRIEF_LIKED' ? 'liked' : 'unliked';
+    console.log(`${LOG} Brief ${verb}: "${data.title}" (${data.isCc ? 'CC' : 'Creative'}) → ${espLink}`);
     // MAIN world has no chrome.runtime — bridge via postMessage to isolated content.js
     window.postMessage({
-      source: 'DMNS_BRIEF_LIKED',
+      source,
       title: data.title,
       dueDate: data.isoDeadline,
       espLink,
@@ -90,33 +104,47 @@
     };
   }
 
-  // --- Like click detection ---
+  // A filled heart (fill="currentColor") means the brief is liked now,
+  // so the click is an unlike.
+  function isCurrentlyLiked(button) {
+    const svg = button.querySelector('svg');
+    return !!svg && svg.getAttribute('fill') === 'currentColor';
+  }
+
+  // --- Like / unlike click detection ---
 
   function onDocumentClick(event) {
-    // List view
+    // List view — espId comes from diffing the refetched list
     const listBtn = event.target.closest('button[title="Like"]');
     if (listBtn) {
-      const svg = listBtn.querySelector('svg');
-      if (!svg || svg.getAttribute('fill') === 'currentColor') return;
+      if (!listBtn.querySelector('svg')) return;
       const article = listBtn.closest('article');
       if (!article) return;
       const data = extractArticleData(article);
       if (!data) return;
-      pendingSnapshot = new Set(likedEspIds);
-      pendingData = data;
-      console.log(`${LOG} Like click: "${data.title}"`);
+      const pending = { snapshot: new Set(likedEspIds), data };
+      if (isCurrentlyLiked(listBtn)) {
+        pendingUnlike = pending;
+        console.log(`${LOG} Unlike click: "${data.title}"`);
+      } else {
+        pendingLike = pending;
+        console.log(`${LOG} Like click: "${data.title}"`);
+      }
       return;
     }
 
     // Detail view — espId is in the URL, no diff needed
     const detailBtn = event.target.closest('button[title="Like / Remove like"]');
-    if (!detailBtn) return;
-    const svg = detailBtn.querySelector('svg');
-    if (!svg || svg.getAttribute('fill') === 'currentColor') return; // unlike → skip
+    if (!detailBtn || !detailBtn.querySelector('svg')) return;
     const data = extractDetailData();
     if (!data) return;
-    console.log(`${LOG} Like click (detail): "${data.title}"`);
-    dispatchLike(data.espId, data);
+    if (isCurrentlyLiked(detailBtn)) {
+      console.log(`${LOG} Unlike click (detail): "${data.title}"`);
+      dispatch('DMNS_BRIEF_UNLIKED', data.espId, data);
+    } else {
+      console.log(`${LOG} Like click (detail): "${data.title}"`);
+      dispatch('DMNS_BRIEF_LIKED', data.espId, data);
+    }
   }
 
   document.addEventListener('click', onDocumentClick, true);

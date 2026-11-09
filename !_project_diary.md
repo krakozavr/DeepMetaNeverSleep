@@ -1,5 +1,12 @@
 # DeepMeta Never Sleep — Project Diary
 
+## 2026-11-09 — v1.11.0: Unlike removes the Google Task
+
+- List view: clicking a filled heart sets `pendingUnlike`; the next briefs refetch is diffed for an espId that is still present but no longer `rating:100`. Only an unambiguous single change is dispatched (same rule now applies to likes).
+- Detail view: espId from URL, dispatched immediately.
+- Background `BRIEF_UNLIKED`: scans the stored CC/Creative list IDs plus any list titled "CC Briefs"/"Creative Briefs" (all pages, incl. completed/hidden), deletes tasks whose notes equal the ESP link. Never creates a list.
+- `tasksApi` now tolerates empty 204 bodies (DELETE).
+
 ## 2026-11-07 — v1.10.1: Briefs API moved, list-view likes stopped creating tasks
 
 ### Symptom

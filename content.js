@@ -57,6 +57,12 @@ window.addEventListener('message', (event) => {
   if (event.data?.source === 'DMNS_BRIEF_LIKED') {
     const { source, ...payload } = event.data;
     chrome.runtime.sendMessage({ type: 'BRIEF_LIKED', ...payload }).catch(() => {});
+    return;
+  }
+
+  if (event.data?.source === 'DMNS_BRIEF_UNLIKED') {
+    const { source, ...payload } = event.data;
+    chrome.runtime.sendMessage({ type: 'BRIEF_UNLIKED', ...payload }).catch(() => {});
   }
 });
 

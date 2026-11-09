@@ -6,12 +6,16 @@ const DEFAULT_SETTINGS = {
 
 const settingIds = Object.keys(DEFAULT_SETTINGS);
 const statusEl = document.getElementById('status');
+const tasksStatusEl = document.getElementById('tasksStatus');
 
-function setStatus(text) {
+function setStatus(text, { sticky = false, state = 'success' } = {}) {
   statusEl.textContent = text;
+  statusEl.dataset.state = state;
   window.clearTimeout(setStatus.timer);
+  if (sticky) return;
   setStatus.timer = window.setTimeout(() => {
     statusEl.textContent = '';
+    delete statusEl.dataset.state;
   }, 1200);
 }
 
@@ -71,10 +75,73 @@ function showNotConnected() {
 
 const TASKS_API = 'https://tasks.googleapis.com/tasks/v1';
 
-function fetchLists(token) {
-  return fetch(`${TASKS_API}/users/@me/lists`, {
+function removeCachedToken(token) {
+  return new Promise(resolve => chrome.identity.removeCachedAuthToken({ token }, resolve));
+}
+
+async function fetchLists(token) {
+  const response = await fetch(`${TASKS_API}/users/@me/lists`, {
     headers: { 'Authorization': `Bearer ${token}` }
-  }).then(r => r.json()).then(d => d.items || []);
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) await removeCachedToken(token);
+    if (response.status === 401) {
+      throw new Error('Google authorization expired');
+    }
+    throw new Error(`Google Tasks API ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.items || [];
+}
+
+function selectedListTitle(select) {
+  if (!select.value) return null;
+  return select.selectedOptions[0]?.textContent || null;
+}
+
+function syncSavedListTitles(lists, ccListId, creativeListId) {
+  const values = {};
+  const ccList = lists.find(list => list.id === ccListId);
+  const creativeList = lists.find(list => list.id === creativeListId);
+  if (ccList) values.ccListTitle = ccList.title;
+  if (creativeList) values.creativeListTitle = creativeList.title;
+  if (Object.keys(values).length > 0) chrome.storage.local.set(values);
+}
+
+function renderTaskStatus(taskStatus) {
+  if (!taskStatus?.state) {
+    tasksStatusEl.hidden = true;
+    tasksStatusEl.textContent = '';
+    delete tasksStatusEl.dataset.state;
+    return;
+  }
+
+  tasksStatusEl.hidden = false;
+  tasksStatusEl.dataset.state = taskStatus.state;
+
+  if (taskStatus.state === 'success') {
+    if (taskStatus.action === 'deleted') {
+      tasksStatusEl.textContent = `Removed “${taskStatus.title}” from ${taskStatus.listName}.`;
+    } else if (taskStatus.action === 'not-found') {
+      tasksStatusEl.textContent = `No extension-created task found for “${taskStatus.title}”.`;
+    } else {
+      tasksStatusEl.textContent = `Created “${taskStatus.title}” in ${taskStatus.listName}.`;
+    }
+  } else if (taskStatus.state === 'creating') {
+    tasksStatusEl.textContent = `Creating “${taskStatus.title}”…`;
+  } else if (taskStatus.state === 'deleting') {
+    tasksStatusEl.textContent = `Removing “${taskStatus.title}”…`;
+  } else {
+    tasksStatusEl.textContent = `Task failed: ${taskStatus.error || 'Unknown error'}`;
+  }
+}
+
+function loadTaskStatus() {
+  chrome.storage.local.get({ lastTaskStatus: null }, stored => {
+    renderTaskStatus(stored.lastTaskStatus);
+  });
 }
 
 function initTasksUi() {
@@ -84,9 +151,16 @@ function initTasksUi() {
       .then(lists => {
         chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
           showConnected(lists, stored.ccListId, stored.creativeListId);
+          syncSavedListTitles(lists, stored.ccListId, stored.creativeListId);
         });
       })
-      .catch(() => showNotConnected());
+      .catch(error => {
+        showNotConnected();
+        setStatus(`${error.message}. Reconnect Google Tasks.`, {
+          sticky: true,
+          state: 'error'
+        });
+      });
   });
 }
 
@@ -104,18 +178,27 @@ btnConnect.addEventListener('click', () => {
       .then(lists => {
         chrome.storage.local.get({ ccListId: null, creativeListId: null }, stored => {
           showConnected(lists, stored.ccListId, stored.creativeListId);
+          syncSavedListTitles(lists, stored.ccListId, stored.creativeListId);
           setStatus('Connected');
         });
       })
-      .catch(err => setStatus('Failed: ' + err.message));
+      .catch(err => setStatus('Failed: ' + err.message, { sticky: true, state: 'error' }));
   });
 });
 
 btnDisconnect.addEventListener('click', () => {
   chrome.identity.getAuthToken({ interactive: false }, token => {
     const finish = () => {
-      chrome.storage.local.remove(['ccListId', 'creativeListId'], () => {
+      chrome.storage.local.remove([
+        'ccListId',
+        'creativeListId',
+        'ccListTitle',
+        'creativeListTitle',
+        'briefTaskLinks',
+        'lastTaskStatus'
+      ], () => {
         showNotConnected();
+        renderTaskStatus(null);
         setStatus('Disconnected');
       });
     };
@@ -128,13 +211,26 @@ btnDisconnect.addEventListener('click', () => {
 });
 
 ccListSelect.addEventListener('change', () => {
-  chrome.storage.local.set({ ccListId: ccListSelect.value || null });
+  chrome.storage.local.set({
+    ccListId: ccListSelect.value || null,
+    ccListTitle: selectedListTitle(ccListSelect)
+  });
   setStatus('Saved');
 });
 
 creativeSelect.addEventListener('change', () => {
-  chrome.storage.local.set({ creativeListId: creativeSelect.value || null });
+  chrome.storage.local.set({
+    creativeListId: creativeSelect.value || null,
+    creativeListTitle: selectedListTitle(creativeSelect)
+  });
   setStatus('Saved');
 });
 
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.lastTaskStatus) {
+    renderTaskStatus(changes.lastTaskStatus.newValue);
+  }
+});
+
 initTasksUi();
+loadTaskStatus();

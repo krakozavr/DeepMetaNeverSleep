@@ -171,15 +171,18 @@
   }
 
   async function refreshBriefs(reason) {
-    if (!lastBriefsUrl || pendingActions.length === 0) return;
+    // Capture the URL now: the page may switch filters (updating
+    // lastBriefsUrl) while this request is in flight.
+    const url = lastBriefsUrl;
+    if (!url || pendingActions.length === 0) return;
     try {
-      const response = await _fetch(lastBriefsUrl, {
+      const response = await _fetch(url, {
         method: 'GET',
         credentials: 'same-origin',
         cache: 'no-store'
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      onBriefsResponse(extractBriefItems(await response.json()), lastBriefsUrl);
+      onBriefsResponse(extractBriefItems(await response.json()), url);
       console.log(`${LOG} Rechecked briefs after like (${reason})`);
     } catch (error) {
       console.warn(`${LOG} Brief recheck failed (${reason}): ${error.message}`);

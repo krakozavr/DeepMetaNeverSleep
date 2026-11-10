@@ -54,8 +54,15 @@ function createHarness(initialPayload) {
   let payload = initialPayload;
   const fetchCalls = [];
 
+  let held = null;
   async function originalFetch(url, options = {}) {
     fetchCalls.push({ url, options });
+    if (held) {
+      const gate = held;
+      held = null;
+      await gate.promise;
+      return response(gate.payload);
+    }
     return response(payload);
   }
 
@@ -96,6 +103,12 @@ function createHarness(initialPayload) {
     fetchCalls,
     messages,
     setPayload(value) { payload = value; },
+    // Hold the next fetch until release() — it then answers with `value`
+    holdNextFetch(value) {
+      let release;
+      held = { payload: value, promise: new Promise(resolve => { release = resolve; }) };
+      return release;
+    },
     // Default to the live endpoint DeepMeta uses since Nov 2026
     async observePayload(url = BRIEFS_URL) {
       await window.fetch(url);
@@ -451,3 +464,24 @@ function createDetailHarness(espId) {
     }
   };
 }
+
+test('a recheck answer is filed under the URL it requested, even if the filter changes meanwhile', async () => {
+  const listA = BRIEFS_URL;
+  const listB = BRIEFS_URL.replace('uiLikes=6', 'uiLikes=1');
+  const listAPayload = [{ espId: 'OLD', rating: 100 }, { espId: 'X1', rating: null }];
+  const harness = createHarness([]);
+  await harness.observePayload(listB);          // B observed: empty
+  harness.setPayload(listAPayload);
+  await harness.observePayload(listA);          // A observed: OLD liked
+
+  harness.click(article('Pending brief', deadline, false));
+  const release = harness.holdNextFetch(listAPayload); // A unchanged
+  const recheck = harness.runTimer(500);        // recheck of A in flight
+
+  harness.setPayload([]);
+  await harness.observePayload(listB);          // user switches to B
+  release();
+  await recheck;
+
+  assert.deepEqual(dispatched(harness), []);
+});

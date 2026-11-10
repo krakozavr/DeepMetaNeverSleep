@@ -15,12 +15,19 @@
   const PENDING_TTL_MS = 10000;
   const RECENT_DISPATCH_MS = 30000;
 
-  let likedEspIds = new Set();
-  let hasBriefSnapshot = false;
+  let likedEspIds = new Set();      // liked set from the latest list response
   let lastBriefsUrl = '';
   let nextPendingId = 1;
   let pendingActions = [];
-  const recentDispatches = new Map();
+  // Liked set per list URL. Diffs are taken only between two responses of the
+  // same URL, so switching filters/pages is never mistaken for a like/unlike.
+  const likedByUrl = new Map();
+  // Article (title + deadline) → espId, learned from resolved actions so later
+  // toggles of the same brief resolve directly instead of by diff.
+  const espIdByArticle = new Map();
+  // espId → last dispatched action; suppresses repeat confirmations of the same
+  // state while letting like → unlike → like through.
+  const lastDispatched = new Map();
 
   // --- Fetch interception ---
 
@@ -35,7 +42,7 @@
       promise.then(r => {
         if (!r.ok) return;
         r.clone().json()
-          .then(payload => onBriefsResponse(extractBriefItems(payload)))
+          .then(payload => onBriefsResponse(extractBriefItems(payload), url))
           .catch(() => {});
       });
     }
@@ -91,9 +98,14 @@
     return candidates.length === 1 ? itemEspId(candidates[0]) : '';
   }
 
-  function onBriefsResponse(items) {
+  function articleKey(data) {
+    return `${normalizeTitle(data.title)}|${data.isoDeadline || ''}`;
+  }
+
+  function onBriefsResponse(items, url = '') {
     if (!Array.isArray(items)) return;
 
+    const present = new Set(items.map(itemEspId).filter(Boolean));
     const newLiked = new Set(
       items
         .filter(item => Number(item.rating) === 100)
@@ -101,48 +113,61 @@
         .filter(Boolean)
     );
 
+    // Changes since the previous response of the same list URL
+    const previous = likedByUrl.get(url);
+    const addedIds = previous ? [...newLiked].filter(id => !previous.has(id)) : [];
+    const removedIds = previous ? [...previous].filter(id => !newLiked.has(id)) : [];
+    likedByUrl.set(url, newLiked);
+
     if (pendingActions.length > 0) {
       const usedIds = new Set();
       const resolvedPendingIds = new Set();
-      const globallyAddedIds = [...newLiked].filter(id => !likedEspIds.has(id));
-      const globallyRemovedIds = [...likedEspIds].filter(id => !newLiked.has(id));
-
-      // Prefer a deterministic title/code match from the API catalog. This is
-      // what keeps multiple quick likes associated with the correct articles.
-      for (const pending of pendingActions) {
-        const espId = findConfirmedEspId(pending, items, newLiked, usedIds);
-        if (!espId) continue;
+      const resolve = (pending, espId) => {
         usedIds.add(espId);
         resolvedPendingIds.add(pending.id);
+        espIdByArticle.set(pending.key, espId);
         dispatchAction(pending.action, espId, pending.data);
+      };
+      const reachedTarget = (pending, espId) => pending.action === 'like'
+        ? newLiked.has(espId)
+        : (present.has(espId) ? !newLiked.has(espId) : removedIds.includes(espId));
+
+      // 1. Brief already identified earlier: just wait for its target state.
+      for (const pending of pendingActions) {
+        const espId = espIdByArticle.get(pending.key);
+        if (espId && !usedIds.has(espId) && reachedTarget(pending, espId)) {
+          resolve(pending, espId);
+        }
       }
 
-      // Older API payloads may not expose a recognizable title. In that case,
-      // fall back to the added-id diff, but only when a valid pre-click snapshot
-      // was available. Never guess from an empty, not-yet-initialized snapshot.
+      // 2. API payloads that expose titles/codes: deterministic match.
       for (const pending of pendingActions) {
-        if (resolvedPendingIds.has(pending.id) || !pending.snapshotReady) continue;
-        const changedIds = pending.action === 'like'
-          ? globallyAddedIds
-          : globallyRemovedIds;
-        const espId = changedIds.find(id =>
-          !usedIds.has(id) && (
-            pending.action === 'like'
-              ? !pending.snapshot.has(id)
-              : pending.snapshot.has(id)
-          )
+        if (resolvedPendingIds.has(pending.id) || espIdByArticle.has(pending.key)) continue;
+        const espId = findConfirmedEspId(pending, items, newLiked, usedIds);
+        if (espId) resolve(pending, espId);
+      }
+
+      // 3. Live API has no titles: use the same-URL diff, but only when it is
+      //    unambiguous (one waiting action ↔ one changed espId). Guessing
+      //    between several would attach a title/deadline to the wrong brief.
+      for (const action of ['like', 'unlike']) {
+        const waiting = pendingActions.filter(pending =>
+          pending.action === action &&
+          !resolvedPendingIds.has(pending.id) &&
+          !espIdByArticle.has(pending.key)
         );
-        if (!espId) continue;
-        usedIds.add(espId);
-        resolvedPendingIds.add(pending.id);
-        dispatchAction(pending.action, espId, pending.data);
+        const knownIds = new Set(espIdByArticle.values());
+        const candidates = (action === 'like' ? addedIds : removedIds)
+          .filter(id => !usedIds.has(id) && !knownIds.has(id));
+        if (waiting.length === 1 && candidates.length === 1) {
+          resolve(waiting[0], candidates[0]);
+        }
       }
 
       pendingActions = pendingActions.filter(pending => !resolvedPendingIds.has(pending.id));
     }
 
     likedEspIds = newLiked;
-    hasBriefSnapshot = true;
   }
 
   async function refreshBriefs(reason) {
@@ -154,7 +179,7 @@
         cache: 'no-store'
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      onBriefsResponse(extractBriefItems(await response.json()));
+      onBriefsResponse(extractBriefItems(await response.json()), lastBriefsUrl);
       console.log(`${LOG} Rechecked briefs after like (${reason})`);
     } catch (error) {
       console.warn(`${LOG} Brief recheck failed (${reason}): ${error.message}`);
@@ -162,12 +187,25 @@
   }
 
   function queueListAction(action, data) {
+    const key = articleKey(data);
+
+    // like then unlike (or the reverse) before DeepMeta confirmed the first:
+    // the two cancel out — the brief is back in its original state.
+    const opposite = pendingActions.find(pending => pending.key === key && pending.action !== action);
+    if (opposite) {
+      pendingActions = pendingActions.filter(pending => pending !== opposite);
+      console.log(`${LOG} ${opposite.action} + ${action} cancelled out: "${data.title}"`);
+      return;
+    }
+    // Same action already waiting for this brief (double click): keep one.
+    if (pendingActions.some(pending => pending.key === key && pending.action === action)) return;
+
     const pending = {
       id: nextPendingId++,
       action,
       data,
-      snapshot: new Set(likedEspIds),
-      snapshotReady: hasBriefSnapshot
+      key,
+      snapshot: new Set(likedEspIds)
     };
     pendingActions.push(pending);
 
@@ -201,10 +239,11 @@
   }
 
   function dispatchAction(action, espId, data) {
-    const dispatchKey = `${action}:${espId}`;
-    const lastDispatchedAt = recentDispatches.get(dispatchKey) || 0;
-    if (Date.now() - lastDispatchedAt < RECENT_DISPATCH_MS) return;
-    recentDispatches.set(dispatchKey, Date.now());
+    // Skip only a repeat of the same state (e.g. two responses confirming the
+    // same like). A real toggle like → unlike → like always goes through.
+    const last = lastDispatched.get(espId);
+    if (last && last.action === action && Date.now() - last.at < RECENT_DISPATCH_MS) return;
+    lastDispatched.set(espId, { action, at: Date.now() });
 
     const espLink = ESP_BASE + espId;
     const liked = action === 'like';
@@ -219,17 +258,38 @@
     }, location.origin);
   }
 
-  function confirmDetailAction(button, data, action, attempt = 0) {
+  // espId → { action } awaiting DOM confirmation on the detail page
+  const pendingDetail = new Map();
+
+  function queueDetailAction(button, data, action) {
+    const waiting = pendingDetail.get(data.espId);
+    if (waiting && waiting.action !== action) {
+      // Toggled back before the first click was confirmed: cancel both.
+      pendingDetail.delete(data.espId);
+      console.log(`${LOG} ${waiting.action} + ${action} cancelled out (detail): "${data.title}"`);
+      return;
+    }
+    if (waiting) return; // double click of the same action
+    const token = { action };
+    pendingDetail.set(data.espId, token);
+    confirmDetailAction(button, data, action, 0, token);
+  }
+
+  function confirmDetailAction(button, data, action, attempt, token) {
     window.setTimeout(() => {
+      if (pendingDetail.get(data.espId) !== token) return; // cancelled
+
       const svg = button.querySelector('svg');
       const isLiked = svg?.getAttribute('fill') === 'currentColor';
       if ((action === 'like' && isLiked) || (action === 'unlike' && !isLiked)) {
+        pendingDetail.delete(data.espId);
         dispatchAction(action, data.espId, data);
         return;
       }
       if (attempt < 4) {
-        confirmDetailAction(button, data, action, attempt + 1);
+        confirmDetailAction(button, data, action, attempt + 1, token);
       } else {
+        pendingDetail.delete(data.espId);
         console.warn(`${LOG} Detail ${action} was not confirmed: "${data.title}"`);
         reportLocalFailure(
           data.title,
@@ -296,7 +356,7 @@
     const data = extractDetailData();
     if (!data) return;
     console.log(`${LOG} ${action} click (detail): "${data.title}"`);
-    confirmDetailAction(detailBtn, data, action);
+    queueDetailAction(detailBtn, data, action);
   }
 
   document.addEventListener('click', onDocumentClick, true);

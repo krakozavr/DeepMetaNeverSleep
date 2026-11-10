@@ -84,10 +84,14 @@
     }
   }
 
+  // DeepMeta renamed /api/dm-* endpoints to /api/v1/dm/* (seen on briefs,
+  // Nov 2026). Accept both spellings of the batch list endpoint.
+  const BATCH_LIST_PATH_RE = /^\/api\/(?:dm-batches|v\d+\/dm\/batches)\/?$/;
+
   function isBatchListApiUrl(url) {
     return url &&
       url.origin === location.origin &&
-      url.pathname === '/api/dm-batches';
+      BATCH_LIST_PATH_RE.test(url.pathname);
   }
 
   function returnSearchPage(url) {
@@ -800,5 +804,5 @@
   window.addEventListener('popstate', checkStudioPanel);
   checkStudioPanel();
 
-  console.log(`${LOG} Active-row reveal active (MAIN world, build 1.15.0-studio-only.1)`);
+  console.log(`${LOG} Active-row reveal active (MAIN world, build 1.15.3)`);
 })();

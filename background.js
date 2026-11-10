@@ -381,14 +381,16 @@ async function handleBriefUnliked({ title, espLink, isCc }) {
   }
 }
 
+const UPLOAD_API_RE =
+  /\/api\/(?:dm-|v\d+\/dm\/)(?:initialize-upload|authorize-upload-chunk|finalize-upload)(?:[/?#]|$)/;
+
 // Check if URL is a DeepMeta upload endpoint.
 // Matches only the real file-transfer endpoints. The /contribute/esp/uploads
 // page route is intentionally NOT matched: the SPA posts to it for page-state
 // work that is not a file upload, which would otherwise flip the icon active.
 function isDeepMetaUploadUrl(url) {
-  return url.includes('/api/dm-initialize-upload') ||
-         url.includes('/api/dm-authorize-upload-chunk') ||
-         url.includes('/api/dm-finalize-upload') ||
+  // Old /api/dm-* names and the /api/v1/dm/* style DeepMeta moved to (Nov 2026)
+  return UPLOAD_API_RE.test(url) ||
          (url.includes('dm-proxy-') && url.includes('.workers.dev'));
 }
 

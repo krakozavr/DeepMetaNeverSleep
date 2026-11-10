@@ -268,3 +268,186 @@ test('ignores briefs sub-routes such as interest-sync and unrelated APIs', async
     false
   );
 });
+
+// --- Toggle sequences on the same brief (live payload: no titles) ---
+
+function dispatched(harness) {
+  return harness.messages
+    .filter(m => m.source === 'DMNS_BRIEF_LIKED' || m.source === 'DMNS_BRIEF_UNLIKED')
+    .map(m => `${m.source === 'DMNS_BRIEF_LIKED' ? 'like' : 'unlike'}:${m.espLink.split('/').pop()}`);
+}
+
+function errors(harness) {
+  return harness.messages.filter(m => m.source === 'DMNS_BRIEF_STATUS');
+}
+
+test('like → unlike → like on the same brief dispatches all three (no 30s suppression)', async () => {
+  const brief = article('Toggle brief', deadline, false);
+  const off = [{ espId: 'T1', rating: null }, { espId: 'Z9', rating: 100 }];
+  const on = [{ espId: 'T1', rating: 100 }, { espId: 'Z9', rating: 100 }];
+  const harness = createHarness(off);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.setPayload(on);
+  await harness.observePayload();
+
+  harness.click(brief, true);
+  harness.setPayload(off);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.setPayload(on);
+  await harness.observePayload();
+
+  assert.deepEqual(dispatched(harness), ['like:T1', 'unlike:T1', 'like:T1']);
+  assert.equal(errors(harness).length, 0);
+});
+
+test('like then unlike before DeepMeta answers cancels out: no task, no error', async () => {
+  const brief = article('Quick toggle', deadline, false);
+  const off = [{ espId: 'Q1', rating: null }];
+  const harness = createHarness(off);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.click(brief, true);
+  await harness.observePayload(); // site state is back to "not liked"
+  await harness.runTimer(10000);
+
+  assert.deepEqual(dispatched(harness), []);
+  assert.equal(errors(harness).length, 0);
+});
+
+test('like → unlike → like faster than DeepMeta answers ends with one like', async () => {
+  const brief = article('Triple toggle', deadline, false);
+  const harness = createHarness([{ espId: 'R1', rating: null }]);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.click(brief, true);
+  harness.click(brief, false);
+  harness.setPayload([{ espId: 'R1', rating: 100 }]);
+  await harness.observePayload();
+  await harness.runTimer(10000);
+
+  assert.deepEqual(dispatched(harness), ['like:R1']);
+  assert.equal(errors(harness).length, 0);
+});
+
+test('unlike clicked right after a confirmed like resolves (stale snapshot case)', async () => {
+  const brief = article('Stale snapshot', deadline, false);
+  const harness = createHarness([{ espId: 'S1', rating: null }]);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.setPayload([{ espId: 'S1', rating: 100 }]);
+  await harness.observePayload();
+  harness.click(brief, true);
+  // A refetch started before the unlike landed still shows it liked
+  await harness.observePayload();
+  harness.setPayload([{ espId: 'S1', rating: null }]);
+  await harness.observePayload();
+
+  assert.deepEqual(dispatched(harness), ['like:S1', 'unlike:S1']);
+});
+
+test('a duplicate confirmation of the same like is dispatched only once', async () => {
+  const brief = article('Dup', deadline, false);
+  const harness = createHarness([{ espId: 'D1', rating: null }]);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  harness.setPayload([{ espId: 'D1', rating: 100 }]);
+  await harness.observePayload();
+  await harness.observePayload();
+  await harness.runTimer(500);
+
+  assert.deepEqual(dispatched(harness), ['like:D1']);
+});
+
+test('baseline comes from the same list URL: a different filter is not read as a like', async () => {
+  const brief = article('Filter', deadline, false);
+  const harness = createHarness([{ espId: 'F1', rating: null }, { espId: 'F2', rating: null }]);
+  await harness.observePayload();
+
+  harness.click(brief, false);
+  // Liked-only filter view lists an older liked brief — not this click
+  harness.setPayload([{ espId: 'OLD', rating: 100 }]);
+  await harness.observePayload(BRIEFS_URL.replace('uiLikes=6', 'uiLikes=1'));
+  assert.deepEqual(dispatched(harness), []);
+
+  harness.setPayload([{ espId: 'F1', rating: 100 }, { espId: 'F2', rating: null }]);
+  await harness.observePayload();
+  assert.deepEqual(dispatched(harness), ['like:F1']);
+});
+
+// --- Detail page ---
+
+test('detail page: like → unlike → like (each confirmed) dispatches all three', async () => {
+  const h = createDetailHarness('DET1');
+  h.click();            // like
+  h.setLiked(true);  await h.runAllTimers();
+  h.click();            // unlike
+  h.setLiked(false); await h.runAllTimers();
+  h.click();            // like
+  h.setLiked(true);  await h.runAllTimers();
+  assert.deepEqual(dispatched(h), ['like:DET1', 'unlike:DET1', 'like:DET1']);
+  assert.equal(errors(h).length, 0);
+});
+
+test('detail page: quick like → unlike cancels out with no error', async () => {
+  const h = createDetailHarness('DET2');
+  h.click();            // like
+  h.setLiked(true);
+  h.click();            // unlike before confirmation
+  h.setLiked(false);
+  await h.runAllTimers();
+  assert.deepEqual(dispatched(h), []);
+  assert.equal(errors(h).length, 0);
+});
+
+function createDetailHarness(espId) {
+  let liked = false;
+  let listener;
+  const timers = [];
+  const messages = [];
+  const svg = { getAttribute: () => liked ? 'currentColor' : 'none' };
+  const button = { querySelector: sel => sel === 'svg' ? svg : null };
+  const nodes = {
+    'header h1': { textContent: 'Detail brief' },
+    'time[datetime]': { getAttribute: () => deadline },
+    '[class*="fuchsia"]': null
+  };
+  const window = {
+    fetch: async () => response([]),
+    location: { pathname: `/contribute/esp/briefs/detail/${espId}` },
+    setTimeout(callback, delay) { timers.push({ callback, delay, ran: false }); return timers.length; },
+    postMessage(message) { messages.push(message); },
+    addEventListener() {}
+  };
+  const document = {
+    addEventListener(type, callback) { if (type === 'click') listener = callback; },
+    querySelector: sel => nodes[sel] ?? null
+  };
+  vm.runInContext(source, vm.createContext({
+    console: { log() {}, warn() {}, error() {} },
+    Date, Error, Map, Promise, Set, String, document,
+    location: { origin: 'https://deepmeta.creativ.zone' }, window
+  }));
+  return {
+    messages,
+    setLiked(value) { liked = value; },
+    click() {
+      listener({ target: { closest: sel => sel === 'button[title="Like / Remove like"]' ? button : null } });
+    },
+    async runAllTimers() {
+      for (let i = 0; i < 20; i++) {
+        const timer = timers.find(t => !t.ran);
+        if (!timer) break;
+        timer.ran = true;
+        await timer.callback();
+      }
+    }
+  };
+}

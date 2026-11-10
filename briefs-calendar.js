@@ -1,12 +1,15 @@
 // Content script (MAIN world) — briefs page only.
-// Wraps window.fetch to track liked espIds via /api/dm-briefs responses.
+// Wraps window.fetch to track liked espIds via the briefs list API responses.
 // List-view likes/unlikes are queued until DeepMeta confirms them in the API,
 // with explicit rechecks so a missing SPA refetch cannot silently lose sync.
 (function () {
   'use strict';
 
   const LOG = '[DeepMeta Never Sleep][Briefs]';
-  const BRIEFS_API = '/api/dm-briefs';
+  // Briefs list endpoint. DeepMeta moved it from /api/dm-briefs to
+  // /api/v1/dm/briefs (Nov 2026); match both. Sub-routes such as
+  // /api/v1/dm/briefs/interest-sync (polled every ~5s) are excluded.
+  const BRIEFS_API_RE = /\/api\/(?:v\d+\/dm\/briefs|dm-briefs)(?:[?#]|$)/;
   const ESP_BASE = 'https://esp.gettyimages.com/contribute/briefs/detail/';
   const RECHECK_DELAYS_MS = [500, 1500, 3500];
   const PENDING_TTL_MS = 10000;
@@ -27,7 +30,7 @@
     const method = String(args[1]?.method || args[0]?.method || 'GET').toUpperCase();
     const promise = _fetch.apply(this, args);
 
-    if (url.includes(BRIEFS_API)) {
+    if (BRIEFS_API_RE.test(url)) {
       if (method === 'GET') lastBriefsUrl = url;
       promise.then(r => {
         if (!r.ok) return;

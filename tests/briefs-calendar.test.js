@@ -43,6 +43,9 @@ function likeEvent(articleNode, isLiked = false) {
   };
 }
 
+const BRIEFS_URL =
+  '/api/v1/dm/briefs?rf=511&uiModelRequirements=7&uiCc=1&uiLikes=6&uiAssetTypes=3&sort=0&descending=false&search=';
+
 function createHarness(initialPayload) {
   const documentListeners = {};
   const windowListeners = {};
@@ -93,8 +96,9 @@ function createHarness(initialPayload) {
     fetchCalls,
     messages,
     setPayload(value) { payload = value; },
-    async observePayload() {
-      await window.fetch('/api/dm-briefs');
+    // Default to the live endpoint DeepMeta uses since Nov 2026
+    async observePayload(url = BRIEFS_URL) {
+      await window.fetch(url);
       await flush();
     },
     click(articleNode, isLiked = false) {
@@ -214,4 +218,53 @@ test('confirms removal of the last liked brief when the API list becomes empty',
   );
   assert.ok(removed);
   assert.match(removed.espLink, /\/last-id$/);
+});
+
+// Live API items carry no title: { espId, rating, lastViewedAt, totalCount }.
+// Matching must fall back to the liked-set diff.
+test('matches a like from the live /api/v1/dm/briefs payload shape (no titles)', async () => {
+  const harness = createHarness([
+    { espId: 'GIoGo', rating: 100, lastViewedAt: null, totalCount: 2 },
+    { espId: 'GIRim', rating: null, lastViewedAt: null, totalCount: 2 }
+  ]);
+  await harness.observePayload();
+
+  harness.click(article('Analog Hobbies', deadline, false));
+  harness.setPayload([
+    { espId: 'GIoGo', rating: 100, lastViewedAt: null, totalCount: 2 },
+    { espId: 'GIRim', rating: 100, lastViewedAt: null, totalCount: 2 }
+  ]);
+  await harness.observePayload();
+
+  const created = harness.messages.filter(message => message.source === 'DMNS_BRIEF_LIKED');
+  assert.equal(created.length, 1);
+  assert.equal(created[0].title, 'Analog Hobbies');
+  assert.match(created[0].espLink, /\/GIRim$/);
+});
+
+test('still tracks the legacy /api/dm-briefs endpoint', async () => {
+  const harness = createHarness([{ espId: 'id-x', rating: 0 }]);
+  await harness.observePayload('/api/dm-briefs?uiLikes=6');
+
+  harness.click(article('Brief X', deadline));
+  harness.setPayload([{ espId: 'id-x', rating: 100 }]);
+  await harness.observePayload('/api/dm-briefs?uiLikes=6');
+
+  assert.ok(harness.messages.some(message => message.source === 'DMNS_BRIEF_LIKED'));
+});
+
+test('ignores briefs sub-routes such as interest-sync and unrelated APIs', async () => {
+  const harness = createHarness([{ espId: 'id-y', rating: 0 }]);
+  await harness.observePayload();
+
+  harness.click(article('Brief Y', deadline));
+  // A matching liked-set change arriving on the wrong URLs must not dispatch
+  harness.setPayload([{ espId: 'id-y', rating: 100 }]);
+  await harness.observePayload('/api/v1/dm/briefs/interest-sync');
+  await harness.observePayload('/api/v1/cz/likes/019f43d1');
+
+  assert.equal(
+    harness.messages.some(message => message.source === 'DMNS_BRIEF_LIKED'),
+    false
+  );
 });

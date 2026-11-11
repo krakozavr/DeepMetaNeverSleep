@@ -26,7 +26,8 @@ jobs:
             popup.html \
             popup.css \
             popup.js \
-            icons/
+            icons/icon-*.png \
+            icons/icon128-*.png
 
       - name: Check tag matches manifest version
         run: |

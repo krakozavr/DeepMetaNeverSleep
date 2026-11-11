@@ -22,10 +22,38 @@ jobs:
             background.js \
             content.js \
             scroll-restore.js \
+            briefs-calendar.js \
             popup.html \
             popup.css \
             popup.js \
             icons/
+
+      - name: Check tag matches manifest version
+        run: |
+          manifest_version=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+          if [ "$manifest_version" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag ${{ github.ref_name }} does not match manifest version $manifest_version"
+            exit 1
+          fi
+
+      - name: Check every file the extension loads is in the zip
+        run: |
+          python3 - deepmeta-never-sleep-${{ steps.version.outputs.version }}.zip <<'PY'
+          import json, re, sys, zipfile
+          m = json.load(open('manifest.json'))
+          need = {m['background']['service_worker'], m['action']['default_popup']}
+          for cs in m.get('content_scripts', []):
+              need.update(cs.get('js', []) + cs.get('css', []))
+          need.update(m.get('icons', {}).values())
+          need.update(m['action'].get('default_icon', {}).values())
+          popup = open(m['action']['default_popup']).read()
+          need.update(re.findall(r'(?:src|href)="([^":]+)"', popup))
+          have = set(zipfile.ZipFile(sys.argv[1]).namelist())
+          missing = sorted(need - have)
+          if missing:
+              sys.exit(f"Missing from release zip: {missing}")
+          print(f"All {len(need)} referenced files present")
+          PY
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

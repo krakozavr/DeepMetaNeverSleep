@@ -68,17 +68,17 @@ Detailed handoff notes for the batch search restore feature are in
 
 ```
 DeepMetaNeverSleep/
-├── manifest.json          # Extension configuration
-├── background.js          # Background service worker (power management)
-├── content.js            # Content script (upload detection)
-├── icons/                # Extension icons
-│   ├── icon16.png
-│   ├── icon48.png
-│   ├── icon128.png
-│   ├── icon.svg          # Source SVG
-│   ├── generate_icons.py # Python icon generator
-│   └── generate-icons.html # Browser-based icon generator
-└── README.md             # This file
+├── manifest.json          # Extension configuration (MV3)
+├── background.js          # Service worker: power management, upload detection, Google Tasks
+├── content.js             # Isolated-world bridge: settings + messages to the service worker
+├── scroll-restore.js      # MAIN world: Studio batch search restore + active-row reveal
+├── briefs-calendar.js     # MAIN world: brief like/unlike → Google Tasks
+├── popup.html/.css/.js    # Toolbar popup (settings, Google Tasks connection, status)
+├── icons/                 # Toolbar icons: icon-16-*, icon-48-*, icon128-* (active/error/waiting)
+├── tests/                 # node --test suites
+├── docs/                  # GitHub Pages site (privacy policy, terms) + dev notes
+├── design/                # Artwork sources, not packaged (see design/README.md)
+└── .github/workflows/release.yml  # Builds the release zip on a v* tag
 ```
 
 ### How Upload Detection Works
@@ -90,24 +90,24 @@ The extension uses multiple detection strategies to ensure reliability:
 3. **DOM Observation**: Watches for upload progress UI elements as a backup
 4. **Periodic Checks**: Scans for visible upload indicators every 5 seconds
 
-### Regenerating Icons
+### Icons
 
-If you want to customize the icons:
+The toolbar icons in `icons/` are exported from `design/Icons-set.psd`. Keep the
+file names (`icon-16-<state>.png`, `icon-48-<state>.png`, `icon128-<state>.png`
+for `active`, `error`, `waiting`) — `background.js` switches between them.
 
-**Option 1 - Python:**
+### Releasing
+
+Bump `version` in `manifest.json`, merge to `master`, then push a matching tag:
+
 ```bash
-cd icons
-python3 generate_icons.py
+git tag -a v1.2.3 origin/master -m "DeepMeta Never Sleep 1.2.3"
+git push origin v1.2.3
 ```
 
-**Option 2 - Browser:**
-```bash
-# Open icons/generate-icons.html in your browser
-# Click the download buttons for each icon size
-```
-
-**Option 3 - Manual:**
-Edit `icons/icon.svg` and convert to PNG using your preferred tool.
+The Release workflow zips only the files the extension loads, checks that every
+file referenced by `manifest.json`/`popup.html` is present and that the tag
+matches the manifest version, then publishes a GitHub Release.
 
 ## Permissions Explained
 

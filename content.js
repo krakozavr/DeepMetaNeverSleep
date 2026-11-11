@@ -54,9 +54,33 @@ window.addEventListener('message', (event) => {
     return;
   }
 
-  if (event.data?.source === 'DMNS_BRIEF_LIKED') {
+  if (
+    event.data?.source === 'DMNS_BRIEF_LIKED' ||
+    event.data?.source === 'DMNS_BRIEF_UNLIKED'
+  ) {
     const { source, ...payload } = event.data;
-    chrome.runtime.sendMessage({ type: 'BRIEF_LIKED', ...payload }).catch(() => {});
+    const type = source === 'DMNS_BRIEF_LIKED' ? 'BRIEF_LIKED' : 'BRIEF_UNLIKED';
+    chrome.runtime.sendMessage({ type, ...payload })
+      .then(result => {
+        window.postMessage({
+          source: 'DMNS_BRIEF_RESULT',
+          result: result || { ok: false, error: 'No response from extension' }
+        }, location.origin);
+      })
+      .catch(error => {
+        window.postMessage({
+          source: 'DMNS_BRIEF_RESULT',
+          result: { ok: false, error: error.message || 'Extension message failed' }
+        }, location.origin);
+      });
+    return;
+  }
+
+  if (event.data?.source === 'DMNS_BRIEF_STATUS') {
+    chrome.runtime.sendMessage({
+      type: 'BRIEF_STATUS',
+      status: event.data.status
+    }).catch(() => {});
   }
 });
 

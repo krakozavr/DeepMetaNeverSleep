@@ -72,6 +72,33 @@ input[type="checkbox"] {
   font-size: 11px;
 }
 
+.status[data-state="error"] {
+  color: #b42318;
+}
+
+.task-status {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid #cfd8e6;
+  border-radius: 4px;
+  background: #eef4ff;
+  color: #294466;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.task-status[data-state="success"] {
+  border-color: #b8d8bd;
+  background: #edf8ef;
+  color: #285b31;
+}
+
+.task-status[data-state="error"] {
+  border-color: #efc2bd;
+  background: #fff0ee;
+  color: #8a241a;
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     color: #eef2f8;
@@ -90,6 +117,11 @@ input[type="checkbox"] {
   .status {
     color: #8ecf90;
   }
+
+  .status[data-state="error"] { color: #ff9b90; }
+  .task-status { border-color: #3a4b64; background: #202b3c; color: #c6d4e8; }
+  .task-status[data-state="success"] { border-color: #3d6445; background: #1c3021; color: #a8d8af; }
+  .task-status[data-state="error"] { border-color: #78443f; background: #35201e; color: #ffaaa0; }
 }
 
 .section-divider {

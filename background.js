@@ -74,12 +74,89 @@ browserAPI.storage.onChanged.addListener((changes, areaName) => {
 
 const TASKS_ORIGIN = 'https://tasks.googleapis.com';
 const TASKS_SCOPES = ['https://www.googleapis.com/auth/tasks'];
+const LAST_TASK_STATUS_KEY = 'lastTaskStatus';
+const BRIEF_TASK_LINKS_KEY = 'briefTaskLinks';
+const BRIEF_DEDUP_WINDOW_MS = 30000;
+const recentBriefTasks = new Map();
+let taskLinkMutation = Promise.resolve();
+let briefTaskOperation = Promise.resolve();
+
+class TasksApiError extends Error {
+  constructor(status, method, path) {
+    const message = status === 401
+      ? 'Google authorization expired. Open the extension and reconnect Google Tasks.'
+      : `Google Tasks API ${status} (${method} ${path})`;
+    super(message);
+    this.name = 'TasksApiError';
+    this.status = status;
+  }
+}
+
+function storageGet(defaults) {
+  return new Promise(resolve => browserAPI.storage.local.get(defaults, resolve));
+}
+
+function storageSet(values) {
+  return new Promise(resolve => browserAPI.storage.local.set(values, resolve));
+}
+
+function storageRemove(keys) {
+  return new Promise(resolve => browserAPI.storage.local.remove(keys, resolve));
+}
+
+function setLastTaskStatus(status) {
+  return storageSet({
+    [LAST_TASK_STATUS_KEY]: {
+      ...status,
+      timestamp: Date.now()
+    }
+  });
+}
+
+function mutateTaskLinks(mutator) {
+  const operation = taskLinkMutation.then(async () => {
+    const stored = await storageGet({ [BRIEF_TASK_LINKS_KEY]: {} });
+    const links = { ...(stored[BRIEF_TASK_LINKS_KEY] || {}) };
+    const result = await mutator(links);
+    await storageSet({ [BRIEF_TASK_LINKS_KEY]: links });
+    return result;
+  });
+  taskLinkMutation = operation.catch(() => {});
+  return operation;
+}
+
+function getTaskLink(espLink) {
+  return taskLinkMutation.then(async () => {
+    const stored = await storageGet({ [BRIEF_TASK_LINKS_KEY]: {} });
+    return stored[BRIEF_TASK_LINKS_KEY]?.[espLink] || null;
+  });
+}
+
+function saveTaskLink(espLink, taskLink) {
+  return mutateTaskLinks(links => {
+    links[espLink] = taskLink;
+  });
+}
+
+function removeTaskLink(espLink) {
+  return mutateTaskLinks(links => {
+    delete links[espLink];
+  });
+}
+
+function enqueueBriefTaskOperation(operation) {
+  const result = briefTaskOperation.then(operation, operation);
+  briefTaskOperation = result.catch(() => {});
+  return result;
+}
 
 function getAuthToken(interactive) {
   return new Promise((resolve, reject) => {
     browserAPI.identity.getAuthToken({ interactive, scopes: TASKS_SCOPES }, token => {
       if (browserAPI.runtime.lastError) {
         reject(new Error(browserAPI.runtime.lastError.message));
+      } else if (!token) {
+        reject(new Error('Google Tasks is not connected'));
       } else {
         resolve(token);
       }
@@ -87,7 +164,17 @@ function getAuthToken(interactive) {
   });
 }
 
-async function tasksApi(token, method, path, body) {
+function removeCachedAuthToken(token) {
+  return new Promise(resolve => {
+    if (!token) {
+      resolve();
+      return;
+    }
+    browserAPI.identity.removeCachedAuthToken({ token }, resolve);
+  });
+}
+
+async function tasksApi(token, method, path, body, allowAuthRetry = true) {
   const res = await fetch(`${TASKS_ORIGIN}/tasks/v1${path}`, {
     method,
     headers: {
@@ -96,60 +183,214 @@ async function tasksApi(token, method, path, body) {
     },
     body: body ? JSON.stringify(body) : undefined
   });
-  if (!res.ok) throw new Error(`Tasks API ${res.status} ${method} ${path}`);
+
+  if (res.status === 401 && allowAuthRetry) {
+    await removeCachedAuthToken(token);
+    const refreshedToken = await getAuthToken(false);
+    return tasksApi(refreshedToken, method, path, body, false);
+  }
+
+  if (!res.ok) throw new TasksApiError(res.status, method, path);
+  if (res.status === 204) return {};
   return res.json();
 }
 
-async function findOrCreateList(token, name, storageKey) {
+async function findOrCreateList(token, name, storageKey, titleStorageKey) {
   const { items = [] } = await tasksApi(token, 'GET', '/users/@me/lists');
   const found = items.find(l => l.title === name);
   if (found) {
-    browserAPI.storage.local.set({ [storageKey]: found.id });
+    await storageSet({
+      [storageKey]: found.id,
+      [titleStorageKey]: found.title
+    });
     return found.id;
   }
   const created = await tasksApi(token, 'POST', '/users/@me/lists', { title: name });
-  browserAPI.storage.local.set({ [storageKey]: created.id });
+  await storageSet({
+    [storageKey]: created.id,
+    [titleStorageKey]: created.title || name
+  });
   return created.id;
 }
 
 async function handleBriefLiked({ title, dueDate, espLink, isCc }) {
-  let token;
-  try {
-    token = await getAuthToken(false);
-  } catch (_) {
-    console.log('[DeepMeta Never Sleep] Google Tasks not connected — skipping');
-    return;
+  if (!title || !dueDate || !espLink) {
+    throw new Error('Incomplete brief data');
   }
 
-  const listName = isCc ? 'CC Briefs' : 'Creative Briefs';
+  const now = Date.now();
+  for (const [link, timestamp] of recentBriefTasks) {
+    if (now - timestamp > BRIEF_DEDUP_WINDOW_MS) recentBriefTasks.delete(link);
+  }
+  if (recentBriefTasks.has(espLink)) {
+    console.log(`[DeepMeta Never Sleep] Duplicate task suppressed: "${title}"`);
+    return { title, deduped: true };
+  }
+
+  const existingTaskLink = await getTaskLink(espLink);
+  if (existingTaskLink) {
+    recentBriefTasks.set(espLink, now);
+    console.log(`[DeepMeta Never Sleep] Existing linked task preserved: "${title}"`);
+    return {
+      title,
+      listName: existingTaskLink.listName,
+      deduped: true
+    };
+  }
+
+  const defaultListName = isCc ? 'CC Briefs' : 'Creative Briefs';
   const storageKey = isCc ? 'ccListId' : 'creativeListId';
+  const titleStorageKey = isCc ? 'ccListTitle' : 'creativeListTitle';
 
-  const stored = await new Promise(resolve =>
-    browserAPI.storage.local.get({ ccListId: null, creativeListId: null }, resolve)
-  );
-  let listId = stored[storageKey];
+  await setLastTaskStatus({ state: 'creating', title, listName: defaultListName });
 
-  if (!listId) {
-    listId = await findOrCreateList(token, listName, storageKey);
+  try {
+    const token = await getAuthToken(false);
+    const stored = await storageGet({
+      ccListId: null,
+      creativeListId: null,
+      ccListTitle: null,
+      creativeListTitle: null
+    });
+    let listId = stored[storageKey];
+    let destinationName = stored[titleStorageKey] || defaultListName;
+
+    if (!listId) {
+      listId = await findOrCreateList(
+        token,
+        defaultListName,
+        storageKey,
+        titleStorageKey
+      );
+      destinationName = defaultListName;
+    }
+
+    const taskBody = { title, due: dueDate, notes: espLink };
+
+    let createdTask;
+    try {
+      createdTask = await tasksApi(token, 'POST', `/lists/${listId}/tasks`, taskBody);
+    } catch (error) {
+      if (!(error instanceof TasksApiError) || error.status !== 404) throw error;
+
+      // A list selected in the popup can later be deleted in Google Tasks.
+      // Drop that stale ID, recreate/find the default list, and retry once.
+      await storageRemove([storageKey, titleStorageKey]);
+      listId = await findOrCreateList(
+        token,
+        defaultListName,
+        storageKey,
+        titleStorageKey
+      );
+      destinationName = defaultListName;
+      createdTask = await tasksApi(token, 'POST', `/lists/${listId}/tasks`, taskBody);
+    }
+
+    if (!createdTask?.id) throw new Error('Google Tasks did not return a task ID');
+
+    await saveTaskLink(espLink, {
+      taskId: createdTask.id,
+      listId,
+      listName: destinationName,
+      title,
+      createdAt: Date.now()
+    });
+
+    recentBriefTasks.set(espLink, Date.now());
+    await setLastTaskStatus({
+      state: 'success',
+      title,
+      listName: destinationName,
+      espLink
+    });
+
+    console.log(`[DeepMeta Never Sleep] Task created: "${title}" → ${destinationName}`);
+    return { title, listName: destinationName, deduped: false };
+  } catch (error) {
+    await setLastTaskStatus({
+      state: 'error',
+      title,
+      listName: defaultListName,
+      error: error.message || 'Unknown Google Tasks error'
+    });
+    throw error;
   }
+}
 
-  await tasksApi(token, 'POST', `/lists/${listId}/tasks`, {
+async function handleBriefUnliked({ title, espLink, isCc }) {
+  if (!title || !espLink) throw new Error('Incomplete brief data');
+
+  const defaultListName = isCc ? 'CC Briefs' : 'Creative Briefs';
+  await setLastTaskStatus({
+    state: 'deleting',
+    action: 'delete',
     title,
-    due: dueDate,
-    notes: espLink
+    listName: defaultListName
   });
 
-  console.log(`[DeepMeta Never Sleep] Task created: "${title}" → ${listName}`);
+  try {
+    const taskLink = await getTaskLink(espLink);
+    if (!taskLink?.taskId || !taskLink?.listId) {
+      recentBriefTasks.delete(espLink);
+      await setLastTaskStatus({
+        state: 'success',
+        action: 'not-found',
+        title,
+        listName: taskLink?.listName || defaultListName,
+        espLink
+      });
+      return { title, deleted: false, notFound: true };
+    }
+
+    const token = await getAuthToken(false);
+    try {
+      await tasksApi(
+        token,
+        'DELETE',
+        `/lists/${encodeURIComponent(taskLink.listId)}/tasks/${encodeURIComponent(taskLink.taskId)}`
+      );
+    } catch (error) {
+      // A 404 means the user already removed the linked task in Google Tasks.
+      if (!(error instanceof TasksApiError) || error.status !== 404) throw error;
+    }
+
+    await removeTaskLink(espLink);
+    recentBriefTasks.delete(espLink);
+    await setLastTaskStatus({
+      state: 'success',
+      action: 'deleted',
+      title,
+      listName: taskLink.listName || defaultListName,
+      espLink
+    });
+    console.log(`[DeepMeta Never Sleep] Task removed: "${title}" → ${taskLink.listName || defaultListName}`);
+    return {
+      title,
+      listName: taskLink.listName || defaultListName,
+      deleted: true
+    };
+  } catch (error) {
+    await setLastTaskStatus({
+      state: 'error',
+      action: 'delete',
+      title,
+      listName: defaultListName,
+      error: error.message || 'Unknown Google Tasks error'
+    });
+    throw error;
+  }
 }
+
+const UPLOAD_API_RE =
+  /\/api\/(?:dm-|v\d+\/dm\/)(?:initialize-upload|authorize-upload-chunk|finalize-upload)(?:[/?#]|$)/;
 
 // Check if URL is a DeepMeta upload endpoint.
 // Matches only the real file-transfer endpoints. The /contribute/esp/uploads
 // page route is intentionally NOT matched: the SPA posts to it for page-state
 // work that is not a file upload, which would otherwise flip the icon active.
 function isDeepMetaUploadUrl(url) {
-  return url.includes('/api/dm-initialize-upload') ||
-         url.includes('/api/dm-authorize-upload-chunk') ||
-         url.includes('/api/dm-finalize-upload') ||
+  // Old /api/dm-* names and the /api/v1/dm/* style DeepMeta moved to (Nov 2026)
+  return UPLOAD_API_RE.test(url) ||
          (url.includes('dm-proxy-') && url.includes('.workers.dev'));
 }
 
@@ -289,10 +530,41 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'BRIEF_LIKED') {
-    handleBriefLiked(message).catch(err =>
-      console.error('[DeepMeta Never Sleep] Task creation failed:', err.message)
-    );
-    return;
+    enqueueBriefTaskOperation(() => handleBriefLiked(message))
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(err => {
+        console.error('[DeepMeta Never Sleep] Task creation failed:', err.message);
+        sendResponse({ ok: false, title: message.title, error: err.message });
+      });
+    return true;
+  }
+
+  if (message.type === 'BRIEF_UNLIKED') {
+    enqueueBriefTaskOperation(() => handleBriefUnliked(message))
+      .then(result => sendResponse({ ok: true, action: 'delete', ...result }))
+      .catch(err => {
+        console.error('[DeepMeta Never Sleep] Task removal failed:', err.message);
+        sendResponse({
+          ok: false,
+          action: 'delete',
+          title: message.title,
+          error: err.message
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'BRIEF_STATUS') {
+    const reported = message.status || {};
+    const status = {
+      state: 'error',
+      title: String(reported.title || 'Brief').slice(0, 300),
+      error: String(reported.error || 'Brief processing failed').slice(0, 500)
+    };
+    setLastTaskStatus(status)
+      .then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
 
   if (message.type === 'TASKS_CONNECT') {
@@ -316,12 +588,24 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'TASKS_DISCONNECT') {
     getAuthToken(false)
-      .then(token => new Promise(resolve =>
-        browserAPI.identity.removeCachedAuthToken({ token }, resolve)
-      ))
-      .then(() => browserAPI.storage.local.remove(['ccListId', 'creativeListId']))
+      .then(removeCachedAuthToken)
+      .then(() => storageRemove([
+        'ccListId',
+        'creativeListId',
+        'ccListTitle',
+        'creativeListTitle',
+        BRIEF_TASK_LINKS_KEY,
+        LAST_TASK_STATUS_KEY
+      ]))
       .then(() => sendResponse({ ok: true }))
-      .catch(() => sendResponse({ ok: true }));
+      .catch(() => storageRemove([
+        'ccListId',
+        'creativeListId',
+        'ccListTitle',
+        'creativeListTitle',
+        BRIEF_TASK_LINKS_KEY,
+        LAST_TASK_STATUS_KEY
+      ]).then(() => sendResponse({ ok: true })));
     return true;
   }
 
